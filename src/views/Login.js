@@ -8,7 +8,7 @@ export function Login({ onSuccess }) {
     el.innerHTML = `
       <div class="login-card">
         <div class="login-logo">
-          <h1>Studio 358</h1>
+          <img src="/images/studio358-logo.png" alt="Studio 358" style="max-width:180px;height:auto;margin-bottom:12px" />
           <p>Performance Tracker</p>
         </div>
 

@@ -54,7 +54,10 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail }) 
                     <div class="sidebar-avatar" style="width:30px;height:30px;font-size:0.7rem;flex-shrink:0">
                       ${getInitials(emp.full_name)}
                     </div>
-                    <span style="font-weight:500">${emp.full_name}</span>
+                    <div>
+                      <div style="font-weight:500">${emp.full_name}</div>
+                      ${emp.email ? `<div style="font-size:0.75rem;color:var(--text-light)">${emp.email}</div>` : ''}
+                    </div>
                   </div>
                 </td>
                 <td>

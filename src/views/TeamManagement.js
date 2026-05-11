@@ -96,6 +96,7 @@ export function TeamManagement({ user }) {
     const { error: profileError } = await supabase.from('profiles').insert({
       id:        authData.user.id,
       full_name: formData.full_name,
+      email:     formData.email,
       role:      'employee',
       location:  formData.location,
       level:     formData.level || 'junior',
