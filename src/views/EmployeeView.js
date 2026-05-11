@@ -1,0 +1,306 @@
+import { supabase } from '../lib/supabase.js'
+import { LineChart } from '../components/LineChart.js'
+import { getCriteriaForLevel, SCORE_LABELS } from '../lib/criteria.js'
+import { getAllSkills } from '../lib/skills.js'
+import {
+  formatScore, getTrend, getTrendHTML, getScoreLabel,
+  calcQualityRate, getLowScoringCriteria,
+} from '../lib/scoring.js'
+
+export function EmployeeView({ user, onNavigate }) {
+  let evaluations = []
+  let sops = []
+  let selectedSOPId = null
+  let container = null
+
+  async function loadData() {
+    const [evalRes, sopRes] = await Promise.all([
+      supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('sops').select('*').order('updated_at', { ascending: false }),
+    ])
+    evaluations = evalRes.data ?? []
+    sops        = sopRes.data  ?? []
+  }
+
+  function getLatest() { return evaluations[0] ?? null }
+
+  function buildSkillCards() {
+    const empSkills   = user.profile?.skills ?? []
+    const allSkills   = getAllSkills(empSkills)
+    const latestEval  = getLatest()
+    const lowCriteria = getLowScoringCriteria(evaluations)
+
+    const criteriaBySkill = {
+      shellac:   ['technique', 'hygiene'],
+      gel:       ['technique', 'hygiene'],
+      dual_form: ['technique'],
+      manikuere: ['service', 'hygiene'],
+      pediküre:  ['service', 'hygiene'],
+      ibx:       ['technique', 'learning'],
+    }
+
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px">
+        ${allSkills.map(skill => {
+          const hasSkill    = empSkills.includes(skill.id)
+          const relatedLow  = (criteriaBySkill[skill.id] ?? []).some(c => lowCriteria.includes(c))
+          const linkedSop   = sops.find(s => s.associated_skill === skill.id)
+
+          return `
+            <div class="skill-card ${hasSkill ? 'skill-card--active' : ''} ${relatedLow ? 'skill-card--warning' : ''}"
+              style="border-top-color:${skill.color}"
+              data-sop-id="${linkedSop?.id ?? ''}"
+              data-has-sop="${!!linkedSop}">
+              <div class="skill-icon" style="color:${skill.color}">${skill.icon}</div>
+              <div class="skill-name">${skill.label}</div>
+              ${hasSkill
+                ? `<span class="badge badge-success" style="margin-top:6px;font-size:0.65rem">Erworben</span>`
+                : `<span class="badge badge-neutral" style="margin-top:6px;font-size:0.65rem">In Ausbildung</span>`
+              }
+              ${relatedLow
+                ? `<div class="skill-learn-badge">📖 Lernempfehlung</div>`
+                : ''
+              }
+              ${linkedSop
+                ? `<button class="skill-sop-btn" data-sop-id="${linkedSop.id}">SOP ansehen →</button>`
+                : `<span style="font-size:0.7rem;color:var(--text-light);margin-top:4px">Keine SOP verknüpft</span>`
+              }
+            </div>
+          `
+        }).join('')}
+      </div>
+    `
+  }
+
+  function buildSOPDetail(sop) {
+    function getYoutubeEmbed(url) {
+      if (!url) return null
+      const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([A-Za-z0-9_-]{11})/)
+      if (m) return `https://www.youtube.com/embed/${m[1]}`
+      const v = url.match(/vimeo\.com\/(\d+)/)
+      if (v) return `https://player.vimeo.com/video/${v[1]}`
+      return null
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return ''
+      return text
+        .replace(/^## (.+)$/gm, '<h3 class="sop-h3">$1</h3>')
+        .replace(/^### (.+)$/gm, '<h4 class="sop-h4">$1</h4>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul class="sop-list">${s}</ul>`)
+        .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+        .replace(/\n\n/g, '</p><p>')
+    }
+
+    const embed = getYoutubeEmbed(sop.video_url)
+
+    return `
+      <button class="btn btn-ghost btn-sm" id="back-to-profile" style="margin-bottom:20px">← Zurück</button>
+      <div class="card">
+        <div class="card-header">
+          <h3 style="color:var(--aubergine)">${sop.title}</h3>
+          <span style="font-size:0.75rem;color:var(--text-light)">
+            ${new Date(sop.updated_at).toLocaleDateString('de-DE')}
+          </span>
+        </div>
+
+        ${embed ? `
+          <div style="margin-bottom:24px;border-radius:var(--radius-md);overflow:hidden;aspect-ratio:16/9">
+            <iframe src="${embed}" width="100%" height="100%"
+              frameborder="0" allowfullscreen style="display:block"></iframe>
+          </div>
+        ` : ''}
+
+        ${sop.content ? `<div class="sop-content"><p>${renderMarkdown(sop.content)}</p></div>` : ''}
+
+        ${sop.pdf_link ? `
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--cream-dark)">
+            <a href="${sop.pdf_link}" target="_blank" rel="noopener" class="btn btn-ghost">↓ PDF herunterladen</a>
+          </div>
+        ` : ''}
+      </div>
+    `
+  }
+
+  function buildScoreBreakdown(evaluation) {
+    const criteria = getCriteriaForLevel(user.profile?.level || 'junior')
+    const scores   = evaluation.scores ?? {}
+
+    return `
+      <div class="criteria-list">
+        ${criteria.map(c => {
+          const val = scores[c.id] ?? 0
+          const pct = (val / 5) * 100
+          return `
+            <div class="criterion-item">
+              <div class="criterion-header">
+                <span class="criterion-name">${c.label}</span>
+                <span style="font-weight:600;color:var(--aubergine)">${val}/5</span>
+              </div>
+              <div class="score-bar">
+                <div class="score-bar-fill" style="width:${pct}%"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:2px">
+                <span style="font-size:0.7rem;color:var(--text-light)">${SCORE_LABELS[val] || '–'}</span>
+                <span style="font-size:0.7rem;color:var(--text-light)">${Math.round(c.weight * 100)}%</span>
+              </div>
+            </div>
+          `
+        }).join('')}
+      </div>
+    `
+  }
+
+  function buildHTML() {
+    if (selectedSOPId) {
+      const sop = sops.find(s => s.id === selectedSOPId)
+      if (sop) return buildSOPDetail(sop)
+    }
+
+    const latest      = getLatest()
+    const trend       = getTrend(evaluations)
+    const qualityRate = calcQualityRate(evaluations)
+    const level       = user.profile?.level || 'junior'
+
+    return `
+      <div class="page-header">
+        <h2>Meine Performance</h2>
+        <p style="color:var(--text-light);font-size:0.875rem">
+          Willkommen, ${user.profile?.full_name || user.email}
+          · <span class="badge ${level === 'senior' ? 'badge-aubergine' : 'badge-gold'}">${level}</span>
+        </p>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">Aktueller Score</div>
+          <div class="stat-value">${latest ? formatScore(latest.score) : '–'}</div>
+          <div class="stat-sub">von 5.0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Trend</div>
+          <div class="stat-value" style="font-size:1.6rem">${getTrendHTML(trend)}</div>
+          <div class="stat-sub">${trend?.label || 'Noch keine Daten'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Quality Rate</div>
+          <div class="stat-value" style="color:${qualityRate !== null && qualityRate >= 95 ? 'var(--success)' : 'var(--terracotta)'}">
+            ${qualityRate !== null ? qualityRate + '%' : '–'}
+          </div>
+          <div class="stat-sub">Kundenzufriedenheit</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Bewertungen</div>
+          <div class="stat-value">${evaluations.length}</div>
+          <div class="stat-sub">Gesamt</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px" class="detail-grid">
+        <div class="card">
+          <div class="card-header"><h4>Score-Verlauf</h4></div>
+          <div class="chart-container"><canvas id="employee-chart"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h4>Letzte Bewertung</h4>
+            ${latest ? `<span style="font-size:0.8rem;color:var(--text-light)">${new Date(latest.created_at).toLocaleDateString('de-DE')}</span>` : ''}
+          </div>
+          ${latest
+            ? buildScoreBreakdown(latest)
+            : `<div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Bewertung vorhanden.</p></div>`
+          }
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h4>Meine Skills</h4>
+          <button class="btn btn-ghost btn-sm" id="goto-sops">Zur Wissensdatenbank →</button>
+        </div>
+        ${buildSkillCards()}
+      </div>
+
+      ${evaluations.length > 1 ? `
+        <div class="card">
+          <div class="card-header"><h4>Bewertungsverlauf</h4></div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>Datum</th><th>Score</th><th>Quality Rate</th><th>Einstufung</th><th>Notizen</th></tr>
+              </thead>
+              <tbody>
+                ${evaluations.map(e => {
+                  const qr = e.appointments_count > 0
+                    ? Math.round(((e.appointments_count - (e.complaints_count ?? 0)) / e.appointments_count) * 100)
+                    : null
+                  return `
+                    <tr>
+                      <td style="color:var(--text-mid)">${new Date(e.created_at).toLocaleDateString('de-DE')}</td>
+                      <td style="font-weight:600;color:var(--aubergine)">${formatScore(e.score)}</td>
+                      <td style="color:${qr !== null && qr >= 95 ? 'var(--success)' : 'var(--terracotta)'}">
+                        ${qr !== null ? qr + '%' : '–'}
+                      </td>
+                      <td><span class="badge badge-neutral">${getScoreLabel(e.score)}</span></td>
+                      <td style="color:var(--text-light);font-size:0.8rem">${e.notes || '–'}</td>
+                    </tr>
+                  `
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+    `
+  }
+
+  function attachEvents() {
+    container.querySelector('#goto-sops')?.addEventListener('click', () => {
+      onNavigate?.('sops')
+    })
+
+    container.querySelectorAll('.skill-sop-btn, [data-sop-id]').forEach(el => {
+      const sopId = el.dataset.sopId
+      if (!sopId) return
+      el.addEventListener('click', e => {
+        e.stopPropagation()
+        selectedSOPId = sopId
+        rerender()
+      })
+    })
+
+    container.querySelector('#back-to-profile')?.addEventListener('click', () => {
+      selectedSOPId = null
+      rerender()
+    })
+
+    setTimeout(() => {
+      const chart = LineChart('employee-chart', evaluations)
+      chart.render()
+    }, 0)
+  }
+
+  function rerender() {
+    if (!container) return
+    container.innerHTML = buildHTML()
+    attachEvents()
+  }
+
+  async function render() {
+    const el = document.createElement('div')
+    el.className = 'main-content'
+    el.innerHTML = '<div class="loader"><div class="spinner"></div></div>'
+    container = el
+
+    await loadData()
+    el.innerHTML = buildHTML()
+    attachEvents()
+
+    return el
+  }
+
+  return { render }
+}
