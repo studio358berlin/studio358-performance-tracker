@@ -78,6 +78,22 @@ export function TeamManagement({ user }) {
 
   // ── Employee form ──────────────────────────────────────────────────────────
 
+  async function deleteEmployee(employeeId) {
+    const { error } = await supabase.rpc('delete_employee', { employee_id: employeeId })
+    if (error) throw error
+  }
+
+  async function handleDelete(employeeId) {
+    try {
+      await deleteEmployee(employeeId)
+      showToast('Mitarbeiter gelöscht.', 'success')
+      await loadData()
+      rerender()
+    } catch (err) {
+      showToast('Fehler beim Löschen: ' + err.message, 'error')
+    }
+  }
+
   async function addEmployee(formData) {
     const tempPassword = formData.password || Math.random().toString(36).slice(-8)
 
@@ -388,6 +404,7 @@ export function TeamManagement({ user }) {
           selectedEmployee = employees.find(e => e.id === id) ?? null
           view = 'detail'; rerender()
         },
+        onDelete: handleDelete,
       })
       tableArea.appendChild(table.render())
     }
