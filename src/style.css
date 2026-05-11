@@ -154,6 +154,16 @@ a:hover { color: var(--aubergine); }
   cursor: not-allowed;
 }
 
+.btn-danger {
+  background: none;
+  border: 1px solid var(--terracotta);
+  color: var(--terracotta);
+}
+.btn-danger:hover {
+  background: var(--terracotta);
+  color: var(--white);
+}
+
 /* =============================================
    Cards
    ============================================= */

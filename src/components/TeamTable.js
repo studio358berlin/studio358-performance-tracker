@@ -86,8 +86,8 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, on
                   <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center">
                     <button class="btn btn-sm btn-ghost btn-detail" data-id="${emp.id}">Detail</button>
                     <button class="btn btn-sm btn-accent btn-evaluate" data-id="${emp.id}">Bewerten</button>
-                    <button class="btn btn-sm btn-delete" data-id="${emp.id}" data-name="${emp.full_name}" title="Mitarbeiter löschen" style="background:none;border:1px solid var(--terracotta);color:var(--terracotta);padding:4px 8px;border-radius:var(--radius-sm);cursor:pointer;line-height:1;transition:background var(--transition),color var(--transition)" onmouseover="this.style.background='var(--terracotta)';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='var(--terracotta)'">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    <button class="btn btn-sm btn-danger btn-delete" data-id="${emp.id}" title="Mitarbeiter löschen">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                     </button>
                   </div>
                 </td>
@@ -108,7 +108,9 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, on
 
     wrapper.querySelectorAll('.btn-delete').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (confirm(`Mitarbeiter "${btn.dataset.name}" wirklich löschen?\n\nDieser Vorgang kann nicht rückgängig gemacht werden.`)) {
+        const emp = employees.find(e => e.id === btn.dataset.id)
+        const name = emp?.full_name ?? 'diesen Mitarbeiter'
+        if (confirm(`Mitarbeiter "${name}" wirklich löschen?\n\nDieser Vorgang kann nicht rückgängig gemacht werden.`)) {
           onDelete(btn.dataset.id)
         }
       })

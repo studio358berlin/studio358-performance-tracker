@@ -90,6 +90,7 @@ export function TeamManagement({ user }) {
       await loadData()
       rerender()
     } catch (err) {
+      console.error('deleteEmployee fehlgeschlagen:', err)
       showToast('Fehler beim Löschen: ' + err.message, 'error')
     }
   }
