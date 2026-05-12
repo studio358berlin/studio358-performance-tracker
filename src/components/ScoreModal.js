@@ -185,9 +185,26 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
     let error, data
 
     if (isSelfAssessment) {
-      console.log('[ScoreModal] Rufe RPC submit_self_assessment auf…', scores)
-      ;({ data, error } = await supabase.rpc('submit_self_assessment', { p_self_scores: scores }))
-      console.log('[ScoreModal] RPC Ergebnis:', { data, error })
+      // ── Attempt 1: SECURITY DEFINER RPC ──────────────────────────────────────
+      const rpcArg = { p_self_scores: scores }
+      console.log('Sending to DB (RPC submit_self_assessment):', rpcArg)
+      ;({ data, error } = await supabase.rpc('submit_self_assessment', rpcArg))
+      console.log('[ScoreModal] RPC result:', { data, error })
+
+      // ── Attempt 2: direct upsert fallback if RPC is missing / broken ─────────
+      if (error && latestEval?.id) {
+        console.warn('[ScoreModal] RPC failed, trying upsert fallback:', error.message)
+        const upsertPayload = {
+          ...latestEval,
+          self_scores:      scores,
+          self_assessed_at: new Date().toISOString(),
+        }
+        console.log('Sending to DB (upsert fallback):', upsertPayload)
+        ;({ data, error } = await supabase
+          .from('performance_entries')
+          .upsert(upsertPayload, { onConflict: 'employee_id,created_at' }))
+        console.log('[ScoreModal] Upsert fallback result:', { data, error })
+      }
     } else {
       const reworks_count      = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
       const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
@@ -195,25 +212,27 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
       const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
 
       // Derive punctuality_rate from the punctuality star score (proxy, no separate form field)
-      const punctScore      = scores.punctuality ?? 3
+      const punctScore       = scores.punctuality ?? 3
       const punctuality_rate = punctScore >= 5 ? 1.0 : punctScore >= 4 ? 0.97 : punctScore >= 3 ? 0.90 : punctScore >= 2 ? 0.80 : 0.65
 
       const payload = {
-        employee_id:          employee.id,
-        evaluator_id:         evaluatorId,
-        is_self_assessment:   false,
-        manager_scores:       scores,
-        manager_assessed_at:  new Date().toISOString(),
+        employee_id:         employee.id,
+        evaluator_id:        evaluatorId,
+        is_self_assessment:  false,
+        manager_scores:      scores,
+        manager_assessed_at: new Date().toISOString(),
         score,
         appointments_count,
         reworks_count,
         punctuality_rate,
-        customer_feedback:    feedback ? Number(feedback) : null,
-        notes:                notes || null,
+        customer_feedback:   feedback ? Number(feedback) : null,
+        notes:               notes || null,
       }
-      console.log('[ScoreModal] Manager-Bewertung INSERT payload:', payload)
-      ;({ data, error } = await supabase.from('performance_entries').insert(payload))
-      console.log('[ScoreModal] INSERT Ergebnis:', { data, error })
+      console.log('Sending to DB:', payload)
+      ;({ data, error } = await supabase
+        .from('performance_entries')
+        .upsert(payload, { onConflict: 'employee_id,created_at' }))
+      console.log('[ScoreModal] Upsert result:', { data, error })
     }
 
     if (error) {
