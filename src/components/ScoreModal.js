@@ -150,17 +150,18 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, on
 
     const score = calcWeightedScore(scores, employee.level || 'junior')
 
-    let error
+    let error, data
 
     if (isSelfAssessment) {
-      // UPDATE the latest manager evaluation row via RPC (employees can't UPDATE directly)
-      ;({ error } = await supabase.rpc('submit_self_assessment', { p_self_scores: scores }))
+      console.log('[ScoreModal] Rufe RPC submit_self_assessment auf…', scores)
+      ;({ data, error } = await supabase.rpc('submit_self_assessment', { p_self_scores: scores }))
+      console.log('[ScoreModal] RPC Ergebnis:', { data, error })
     } else {
       const complaints_count   = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
       const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
       const feedback           = overlay.querySelector('#customer-feedback')?.value
       const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
-      ;({ error } = await supabase.from('performance_entries').insert({
+      const payload = {
         employee_id:          employee.id,
         evaluator_id:         evaluatorId,
         is_self_assessment:   false,
@@ -174,11 +175,16 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, on
         complaints_count,
         customer_feedback:    feedback ? Number(feedback) : null,
         notes:                notes || null,
-      }))
+      }
+      console.log('[ScoreModal] Manager-Bewertung INSERT payload:', payload)
+      ;({ data, error } = await supabase.from('performance_entries').insert(payload))
+      console.log('[ScoreModal] INSERT Ergebnis:', { data, error })
     }
 
     if (error) {
-      console.error('ScoreModal save fehlgeschlagen:', error)
+      const msg = `Fehler beim Speichern:\n\n${error.message}\n\nCode: ${error.code ?? '–'}\nDetails: ${error.details ?? '–'}\nHint: ${error.hint ?? '–'}`
+      console.error('[ScoreModal] Fehler:', error)
+      window.alert(msg)
       errorEl.textContent = 'Fehler: ' + error.message
       errorEl.style.display = 'block'
       saveBtn.disabled = false

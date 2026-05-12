@@ -15,18 +15,38 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- EVALUATIONS
-CREATE TABLE IF NOT EXISTS evaluations (
-  id                  UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-  employee_id         UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  evaluator_id        UUID        REFERENCES profiles(id) ON DELETE SET NULL,
-  scores              JSONB       NOT NULL DEFAULT '{}',
-  total_score         NUMERIC(3,1) NOT NULL,
-  reclamations_count  INTEGER     NOT NULL DEFAULT 0,
-  appointments_count  INTEGER     NOT NULL DEFAULT 20,
-  customer_feedback   NUMERIC(3,1),
-  notes               TEXT,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- PERFORMANCE ENTRIES
+-- One row per manager evaluation. Self-assessment is written onto the same row
+-- via the RPC function submit_self_assessment().
+CREATE TABLE IF NOT EXISTS performance_entries (
+  id                   UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id          UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  evaluator_id         UUID        REFERENCES profiles(id) ON DELETE SET NULL,
+
+  -- Manager evaluation fields
+  score                NUMERIC(3,1) NOT NULL DEFAULT 0,
+  manager_scores       JSONB,                           -- { hygiene, technique, service, ... }
+  manager_assessed_at  TIMESTAMPTZ,
+
+  -- Self-assessment fields (written via RPC submit_self_assessment)
+  self_scores          JSONB,                           -- same shape as manager_scores
+  self_assessed_at     TIMESTAMPTZ,
+
+  -- Legacy individual columns (kept for backward compatibility)
+  creativity           NUMERIC(3,1) NOT NULL DEFAULT 0,
+  reliability          NUMERIC(3,1) NOT NULL DEFAULT 0,
+  productivity         NUMERIC(3,1) NOT NULL DEFAULT 0,
+
+  -- Objective quality data
+  appointments_count   INTEGER     NOT NULL DEFAULT 20,
+  complaints_count     INTEGER     NOT NULL DEFAULT 0,
+  customer_feedback    NUMERIC(3,1),
+
+  is_self_assessment   BOOLEAN     NOT NULL DEFAULT FALSE,
+  notes                TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  UNIQUE (employee_id, created_at)
 );
 
 -- SOPS (Standard Operating Procedures / Wissensdatenbank)
