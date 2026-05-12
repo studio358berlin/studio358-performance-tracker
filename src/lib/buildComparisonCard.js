@@ -77,7 +77,7 @@ export function buildComparisonCard(evaluation, level, {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+      <div class="cc-meta-grid">
         <div style="padding:10px 14px;background:rgba(74,144,184,0.09);border-radius:var(--radius-sm);border-left:3px solid ${COL_SELF}">
           <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:${COL_SELF}">
             ${selfLabel}
@@ -97,18 +97,19 @@ export function buildComparisonCard(evaluation, level, {
       </div>
 
       ${criteria.map(c => {
-        const selfVal  = selfScores ? (selfScores[c.id] ?? null) : null
-        const mgVal    = mgScores[c.id] ?? null
-        const combined = (mgVal != null && selfVal != null)
+        const selfVal     = selfScores ? (selfScores[c.id] ?? null) : null
+        const mgVal       = mgScores[c.id] ?? null
+        const combined    = (mgVal != null && selfVal != null)
           ? (0.75 * mgVal + 0.25 * selfVal).toFixed(2)
           : null
+        const hasLowScore = selfVal === 1 || mgVal === 1
         return `
-          <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--cream-dark)">
+          <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--cream-dark)${hasLowScore ? ';border-left:3px solid var(--terracotta);padding-left:10px' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-              <span style="font-size:0.82rem;font-weight:500;color:var(--text-dark)">${c.label}</span>
+              <span style="font-size:0.82rem;font-weight:500;color:${hasLowScore ? 'var(--terracotta)' : 'var(--text-dark)'}">${c.label}${hasLowScore ? ' ⚠' : ''}</span>
               <span style="font-size:0.72rem;color:var(--text-light)">${Math.round(c.weight * 100)}%</span>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:3px">
+            <div class="cc-scores-grid">
               ${bar(selfVal, COL_SELF, 'rgba(74,144,184,0.12)')}
               ${bar(mgVal,   COL_MGR,  'rgba(61,43,53,0.1)')}
             </div>
@@ -117,6 +118,7 @@ export function buildComparisonCard(evaluation, level, {
                 Kombiniert&thinsp;(75/25)&thinsp;→&thinsp;<strong style="color:var(--text-mid)">${combined}&thinsp;/&thinsp;5</strong>
               </div>
             ` : ''}
+            ${hasLowScore ? `<div style="font-size:0.7rem;color:var(--terracotta);margin-top:3px">Bewertung 1/5 – Veto-relevant</div>` : ''}
           </div>
         `
       }).join('')}

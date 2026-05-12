@@ -4,15 +4,16 @@ import { getCriteriaForLevel, SCORE_LABELS } from '../lib/criteria.js'
 import { getAllSkills } from '../lib/skills.js'
 import {
   formatScore, getTrend, getTrendHTML, getScoreLabel,
-  calcQualityRate, getLowScoringCriteria,
+  calcQualityRate, getLowScoringCriteria, calcWeightedScore,
 } from '../lib/scoring.js'
 import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
 import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 import { ScoreModal } from '../components/ScoreModal.js'
 
 export function EmployeeView({ user, onNavigate }) {
-  let evaluations = []   // entries with manager scores (for chart, PI, history)
-  let latestEntry = null // most recent entry of any kind (for comparison card)
+  let evaluations = []   // entries with manager scores (for PI, QPI, history stats)
+  let allEntries  = []   // every row for this employee (for chart fallback + comparison card)
+  let latestEntry = null // most recent entry of any kind
   let sops = []
   let selectedSOPId = null
   let container = null
@@ -22,7 +23,9 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
     ])
+    console.log('[EmployeeView] loadData:', { userId: user.id, error: evalRes.error, count: evalRes.data?.length, rows: evalRes.data })
     const all   = evalRes.data ?? []
+    allEntries  = all
     evaluations = all.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
     latestEntry = all[0] ?? null
     sops        = sopRes.data ?? []
@@ -52,46 +55,27 @@ export function EmployeeView({ user, onNavigate }) {
   function buildSkillCards() {
     const empSkills   = user.profile?.skills ?? []
     const allSkills   = getAllSkills(empSkills)
-    const latestEval  = getLatest()
     const lowCriteria = getLowScoringCriteria(evaluations)
 
     const criteriaBySkill = {
-      shellac:   ['technique', 'hygiene'],
-      gel:       ['technique', 'hygiene'],
-      dual_form: ['technique'],
-      manikuere: ['service', 'hygiene'],
-      pediküre:  ['service', 'hygiene'],
-      ibx:       ['technique', 'learning'],
+      shellac:    ['technique', 'hygiene'],
+      gel:        ['technique', 'hygiene'],
+      dual_form:  ['technique'],
+      manikuere:  ['service', 'hygiene'],
+      'pediküre': ['service', 'hygiene'],
+      ibx:        ['technique', 'learning'],
     }
 
     return `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px">
+      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
         ${allSkills.map(skill => {
-          const hasSkill    = empSkills.includes(skill.id)
-          const relatedLow  = (criteriaBySkill[skill.id] ?? []).some(c => lowCriteria.includes(c))
-          const linkedSop   = sops.find(s => s.associated_skill === skill.id)
-
-          return `
-            <div class="skill-card ${hasSkill ? 'skill-card--active' : ''} ${relatedLow ? 'skill-card--warning' : ''}"
-              style="border-top-color:${skill.color}"
-              data-sop-id="${linkedSop?.id ?? ''}"
-              data-has-sop="${!!linkedSop}">
-              <div class="skill-icon" style="color:${skill.color}">${skill.icon}</div>
-              <div class="skill-name">${skill.label}</div>
-              ${hasSkill
-                ? `<span class="badge badge-success" style="margin-top:6px;font-size:0.65rem">Erworben</span>`
-                : `<span class="badge badge-neutral" style="margin-top:6px;font-size:0.65rem">In Ausbildung</span>`
-              }
-              ${relatedLow
-                ? `<div class="skill-learn-badge">📖 Lernempfehlung</div>`
-                : ''
-              }
-              ${linkedSop
-                ? `<button class="skill-sop-btn" data-sop-id="${linkedSop.id}">SOP ansehen →</button>`
-                : `<span style="font-size:0.7rem;color:var(--text-light);margin-top:4px">Keine SOP verknüpft</span>`
-              }
-            </div>
-          `
+          const hasSkill  = empSkills.includes(skill.id)
+          const linkedSop = sops.find(s => s.associated_skill === skill.id)
+          return `<span
+            style="display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;cursor:${linkedSop ? 'pointer' : 'default'};background:${hasSkill ? (skill.color || 'var(--aubergine)') : 'var(--cream-dark)'};color:${hasSkill ? '#fff' : 'var(--text-mid)'};"
+            data-sop-id="${linkedSop?.id ?? ''}"
+            title="${hasSkill ? 'Erworben' : 'In Ausbildung'}${linkedSop ? ' · SOP ansehen' : ''}"
+          >${skill.label}${hasSkill ? ' ✓' : ''}</span>`
         }).join('')}
       </div>
     `
@@ -160,9 +144,28 @@ export function EmployeeView({ user, onNavigate }) {
     const qualityRate = calcQualityRate(evaluations)
     const level       = user.profile?.level || 'junior'
 
-    const piResult   = latest ? calculatePerformance(mapEntryToEngine(latest, level)) : null
+    // Use any available entry for PI (manager-scored preferred, self-assessment as fallback)
+    const latestForPI = latest ?? latestEntry
+    const engineInput = latestForPI ? mapEntryToEngine(latestForPI, level, user.profile) : null
+    const piResult    = engineInput ? calculatePerformance(engineInput) : null
+    console.log('PI DEBUG:', { latestEntry: latestForPI, piResult, evaluations: evaluations.length, allEntries: allEntries.length })
+    if (engineInput) console.log('RECHNUNG:', engineInput.managerScores, 'self:', engineInput.selfScores, 'obj:', engineInput.objektiveDaten)
     const qpi        = calcQPI(evaluations, level)
     const bonusStufe = piResult?.bonusStufe ?? null
+
+    const mgrScores0    = latest?.manager_scores ?? {}
+    const selfScores0   = latest?.self_scores ?? null
+    const combinedScore = latest
+      ? (() => {
+          const mgrW  = calcWeightedScore(mgrScores0, level)
+          const selfW = selfScores0 ? calcWeightedScore(selfScores0, level) : mgrW
+          return Math.round((0.75 * mgrW + 0.25 * selfW) * 10) / 10
+        })()
+      : null
+
+    const avgOf   = s => { if (!s) return null; const v = Object.values(s).filter(x => x > 0); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null }
+    const mgAvg   = avgOf(Object.keys(mgrScores0).length ? mgrScores0 : null)
+    const selfAvg = avgOf(selfScores0)
 
     const bonusBadgeColor = {
       Gold:         'var(--gold)',
@@ -195,15 +198,25 @@ export function EmployeeView({ user, onNavigate }) {
       <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-label">Aktueller Score</div>
-          <div class="stat-value">${latest ? formatScore(latest.score) : '–'}</div>
-          <div class="stat-sub">von 5.0</div>
+          <div class="stat-value">${combinedScore !== null ? formatScore(combinedScore) : '–'}</div>
+          <div class="stat-sub">von 5.0${selfScores0 ? ' · 75/25' : ''}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="${piResult?.vetoAusgeloest ? 'border-left:3px solid var(--terracotta)' : ''}">
           <div class="stat-label">Performance Index</div>
-          <div class="stat-value" style="color:var(--aubergine)">
-            ${piResult ? piResult.PI_Monat : '–'}
+          <div class="stat-value" style="color:${piResult?.vetoAusgeloest ? 'var(--terracotta)' : 'var(--aubergine)'}">
+            ${piResult?.vetoAusgeloest
+              ? '<strong>0 <span style="font-size:0.75rem">(VETO)</span></strong>'
+              : piResult != null
+                ? String(piResult.PI_Monat)
+                : 'Keine Daten'
+            }
           </div>
-          <div class="stat-sub">von 100 · ${piResult?.vetoAusgeloest ? '⚠ Veto' : 'aktueller Monat'}</div>
+          <div class="stat-sub">von 100 · ${piResult?.vetoAusgeloest ? '⚠ Sicherheitsveto' : piResult != null ? 'aktueller Monat' : 'Bewertung ausstehend'}</div>
+          ${piResult?.vetoAusgeloest && piResult.vetoCauses?.length ? `
+            <div style="font-size:0.62rem;color:var(--terracotta);margin-top:4px;line-height:1.5">
+              ${piResult.vetoCauses.map(c => `⚠ ${c}`).join('<br>')}
+            </div>
+          ` : ''}
         </div>
         <div class="stat-card">
           <div class="stat-label">Quartal QPI</div>
@@ -220,6 +233,20 @@ export function EmployeeView({ user, onNavigate }) {
           <div class="stat-sub">${qpi !== null ? 'QPI ' + qpi : 'QPI noch nicht berechenbar'}</div>
         </div>
       </div>
+
+      <details open style="margin-bottom:16px">
+        <summary style="font-size:0.72rem;font-weight:600;color:var(--text-light);cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;padding:2px 0">
+          ◉ Debug · Berechnungsdetails
+        </summary>
+        <div style="font-size:0.72rem;background:rgba(61,43,53,0.05);border-radius:var(--radius-sm);padding:10px 14px;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px 20px;line-height:2;font-family:monospace">
+          <span>Manager-Schnitt:&nbsp;<strong>${mgAvg ?? '–'}&thinsp;/5</strong></span>
+          <span>Mitarbeiter-Schnitt:&nbsp;<strong>${selfAvg ?? '–'}&thinsp;/5</strong></span>
+          <span>Veto aktiv:&nbsp;<strong style="color:${piResult?.vetoAusgeloest ? 'var(--terracotta)' : '#6B8F71'}">${piResult?.vetoAusgeloest ? 'JA ⚠' : piResult ? 'Nein ✓' : '–'}</strong></span>
+          ${piResult?.vetoCauses?.length ? `<span style="color:var(--terracotta)">Durch:&nbsp;${piResult.vetoCauses.join(' · ')}</span>` : ''}
+          <span>Berechneter PI:&nbsp;<strong style="color:var(--aubergine)">${piResult ? piResult.PI_Monat : 'null'}</strong></span>
+          <span style="color:var(--text-light)">Szenario:&nbsp;<strong>${!piResult ? 'C – keine Daten' : piResult.vetoAusgeloest ? 'A – Veto' : piResult.PI_Monat === 0 ? 'B – Formel?' : '✓ OK'}</strong></span>
+        </div>
+      </details>
 
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Score-Verlauf</h4></div>
@@ -296,9 +323,12 @@ export function EmployeeView({ user, onNavigate }) {
     })
 
     setTimeout(() => {
-      const level  = user.profile?.level || 'junior'
-      const sorted = [...evaluations].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      const labels = sorted.map(e => e.evaluation_month
+      const level = user.profile?.level || 'junior'
+      // Prefer manager-scored entries for the chart; fall back to all entries so the
+      // chart is never empty while waiting for the manager to complete their rating.
+      const chartSrc = evaluations.length ? evaluations : allEntries
+      const sorted   = [...chartSrc].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      const labels   = sorted.map(e => e.evaluation_month
         ? new Date(e.evaluation_month + 'T12:00:00').toLocaleDateString('de-DE', { month: 'short', year: '2-digit' })
         : new Date(e.created_at).toLocaleDateString('de-DE', { month: 'short', year: '2-digit' }))
       const values = sorted.map(e => calculatePerformance(mapEntryToEngine(e, level)).PI_Monat)

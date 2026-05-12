@@ -454,9 +454,10 @@ tbody td {
    ============================================= */
 
 .sidebar {
+  /* JS adds/removes this element from the DOM — no CSS visibility tricks needed */
+  display: flex;
   width: var(--sidebar-w);
   background: var(--aubergine);
-  display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
@@ -1031,21 +1032,175 @@ tbody td {
 }
 
 /* =============================================
-   Responsive
+   Mobile header
+   — JS adds this element only on mobile.
+     No media query needed for show/hide.
    ============================================= */
 
-@media (max-width: 768px) {
-  .app-layout {
-    flex-direction: column;
-  }
-  .sidebar {
-    width: 100%;
-    height: auto;
-  }
+.mobile-header {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--aubergine);
+  height: 52px;
+  padding: 0 20px;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  flex-shrink: 0;
+}
+
+.mobile-header-title {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  color: var(--cream);
+  letter-spacing: 0.08em;
+}
+
+/* =============================================
+   Mobile layout adjustments (< 1024px)
+   — These only affect padding/grid sizing.
+     The sidebar is already absent from the DOM.
+   ============================================= */
+@media (max-width: 1023px) {
   .main-content {
-    padding: 20px;
+    padding: 16px;
+    /* Leave room for the sticky bottom nav */
+    padding-bottom: 76px;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .stat-grid[style*="repeat(5"],
+  .stat-grid[style*="repeat(auto"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .analytics-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .top-performer-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .freq-label {
+    width: auto !important;
+    min-width: 80px;
+  }
+}
+
+/* =============================================
+   Comparison card responsive grids
+   ============================================= */
+
+.cc-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.cc-scores-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+@media (max-width: 600px) {
+  .cc-meta-grid {
+    grid-template-columns: 1fr;
+  }
+  .cc-scores-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
   .stat-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, 1fr) !important;
   }
+}
+
+/* =============================================
+   Bottom Navigation
+   — JS adds this element only on mobile.
+     No media query needed for show/hide.
+   ============================================= */
+
+.bottom-nav {
+  display: flex;                                   /* always flex when in DOM */
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--aubergine);
+  border-top: 1px solid rgba(245,237,228,0.14);
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 4px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(245,237,228,0.45);
+  transition: color 0.15s;
+  min-height: 60px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav-item.active {
+  color: var(--cream);
+}
+
+.bottom-nav-item:active {
+  color: var(--gold);
+}
+
+.bottom-nav-item svg {
+  flex-shrink: 0;
+}
+
+.bottom-nav-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  font-family: var(--font-body);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Gold dot under active icon */
+.bottom-nav-item.active svg {
+  filter: drop-shadow(0 0 4px rgba(212,147,90,0.6));
+}
+
+/* =============================================
+   Treatment quick-tap buttons – hover/active
+   ============================================= */
+
+.btn-treatment:hover,
+.btn-treatment:focus-visible {
+  border-color: var(--aubergine) !important;
+  background: var(--cream) !important;
+  outline: none;
+}
+
+.btn-treatment:active {
+  transform: scale(0.97);
 }

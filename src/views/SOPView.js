@@ -37,6 +37,7 @@ export function SOPView({ user }) {
       video_url:        formData.video_url || null,
       pdf_link:         formData.file_url  || null,
       associated_skill: skill || null,
+      category:         formData.sop_group === 'studio' ? 'studio-standards' : 'behandlungen',
     }
 
     if (editSop) {
@@ -53,10 +54,15 @@ export function SOPView({ user }) {
     if (error) { console.error('sops DELETE fehlgeschlagen:', error); throw error }
   }
 
+  // Matches a SOP to the active tab. Uses the explicit `category` field when present;
+  // falls back to the legacy uppercase-detection for rows saved before the migration.
+  function inActiveGroup(s) {
+    if (s.category) return s.category === (activeGroup === 'studio' ? 'studio-standards' : 'behandlungen')
+    return activeGroup === 'studio' ? isStudioCat(s.associated_skill) : !isStudioCat(s.associated_skill)
+  }
+
   function filteredSOPs() {
-    const byGroup = sops.filter(s =>
-      activeGroup === 'studio' ? isStudioCat(s.associated_skill) : !isStudioCat(s.associated_skill)
-    )
+    const byGroup = sops.filter(inActiveGroup)
     if (filterSkill === 'all') return byGroup
     return byGroup.filter(s => s.associated_skill === filterSkill)
   }
@@ -85,9 +91,10 @@ export function SOPView({ user }) {
   }
 
   function buildSkillFilter() {
-    const subCats = categories.filter(cat =>
-      activeGroup === 'studio' ? isStudioCat(cat) : !isStudioCat(cat)
-    )
+    // Derive subcategory tabs from the SOPs currently in this group — not from the global categories list.
+    const subCats = [...new Set(
+      sops.filter(inActiveGroup).map(s => s.associated_skill).filter(Boolean)
+    )].sort()
     const knownSkills = getAllSkills()
 
     return `

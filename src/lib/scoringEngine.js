@@ -112,6 +112,10 @@ export function calculatePerformance({ level, managerScores, selfScores, objekti
   const zuvCheck     = hasObj ? objZuv : (managerScores['Zuverlaessigkeit'] ?? 0)
   const vetoAusgeloest = hygieneCheck < V_L || zuvCheck < V_L
 
+  const vetoCauses = []
+  if (hygieneCheck < V_L) vetoCauses.push(`Sauberkeit & Hygiene (${round1(hygieneCheck)} < ${V_L})`)
+  if (zuvCheck < V_L)     vetoCauses.push(`Zuverlässigkeit (${round1(zuvCheck)} < ${V_L})`)
+
   const objektiveScores = { Zuverlaessigkeit: objZuv, Technische_Exzellenz: objTech, Kundenmanagement: objKunden }
 
   if (vetoAusgeloest) {
@@ -121,6 +125,7 @@ export function calculatePerformance({ level, managerScores, selfScores, objekti
       QPI:            qpi,
       bonusStufe:     'Kein Bonus',
       vetoAusgeloest: true,
+      vetoCauses,
       details:        { C_k: C, E_k: null, D_k: null, delta: null, PI_vorSkala: null, objektiveScores },
     }
   }
@@ -168,6 +173,7 @@ export function calculatePerformance({ level, managerScores, selfScores, objekti
     QPI:            QPI !== null ? round1(QPI) : null,
     bonusStufe:     getBonusStufe(QPI),
     vetoAusgeloest: false,
+    vetoCauses:     [],
     details:        { C_k: C, E_k: E, D_k: D, delta, PI_vorSkala, objektiveScores },
   }
 }
@@ -177,19 +183,27 @@ export function calculatePerformance({ level, managerScores, selfScores, objekti
 /**
  * Maps a performance_entries row to calculatePerformance() input.
  * self_scores live on the same row as manager_scores (set via RPC submit_self_assessment).
+ *
+ * @param {object} entry        - performance_entries row
+ * @param {string} level        - 'junior' | 'senior'
+ * @param {object} [profileData] - profiles row (Phase 4: total_revenue_current_month, treatments_count_current_month)
  */
-export function mapEntryToEngine(entry, level) {
+export function mapEntryToEngine(entry, level, profileData = null) {
   const ms  = entry.manager_scores ?? {}
   const lvl = (level === 'senior' || level === 'Senior') ? 'Senior' : 'Junior'
 
-  const fallback = entry.score ?? 3
+  const fallback = entry.score > 0 ? entry.score : 3
+
+  // Phase 4 hook: derive Umsatz score from profile revenue when available.
+  // Until revenue targets are defined, fall back to manager score as before.
+  const revenueScore = ms.revenue ?? entry.productivity ?? fallback
 
   const managerScores = {
     Sauberkeit_Hygiene:      ms.hygiene     ?? fallback,
     Technische_Exzellenz:    ms.technique   ?? fallback,
     Kundenmanagement:        ms.service     ?? fallback,
     Mentoring:               ms.mentoring   ?? fallback,
-    Umsatz_Produktivitaet:   ms.revenue     ?? entry.productivity ?? fallback,
+    Umsatz_Produktivitaet:   revenueScore,
     Zuverlaessigkeit:        ms.punctuality ?? entry.reliability  ?? fallback,
     Kreativitaet_Innovation: ms.creativity  ?? entry.creativity   ?? fallback,
   }
@@ -222,7 +236,7 @@ export function mapEntryToEngine(entry, level) {
     kundenfeedbackDurchschnitt,
   }
 
-  return { level: lvl, managerScores, selfScores, objektiveDaten }
+  return { level: lvl, managerScores, selfScores, objektiveDaten, profileData }
 }
 
 /**

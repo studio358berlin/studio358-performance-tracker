@@ -5,13 +5,17 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
   const location  = user?.profile?.location
 
   const managerNav = [
-    { id: 'dashboard', icon: '◈', label: 'Dashboard'       },
-    { id: 'team',      icon: '◉', label: 'Team Management' },
-    { id: 'sops',      icon: '◎', label: 'Wissensdatenbank' },
+    { id: 'checkout',  icon: '◈', label: 'Tagesabschluss'  },
+    { id: 'analytics', icon: '◉', label: 'Umsatz-Analytics' },
+    { id: 'dashboard', icon: '⊡', label: 'Dashboard'        },
+    { id: 'team',      icon: '⊞', label: 'Team Management'  },
+    { id: 'sops',      icon: '◎', label: 'Wissensdatenbank'  },
+    { id: 'admin',     icon: '⚙', label: 'Studio-Admin'     },
   ]
 
   const employeeNav = [
-    { id: 'my-performance', icon: '◈', label: 'Meine Performance' },
+    { id: 'checkout',       icon: '◈', label: 'Tagesabschluss'  },
+    { id: 'my-performance', icon: '⊡', label: 'Meine Performance' },
     { id: 'sops',           icon: '◎', label: 'Wissensdatenbank'  },
   ]
 

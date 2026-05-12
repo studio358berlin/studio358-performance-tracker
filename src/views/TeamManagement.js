@@ -3,7 +3,7 @@ import { ScoreModal } from '../components/ScoreModal.js'
 import { TeamTable } from '../components/TeamTable.js'
 import { LineChart } from '../components/LineChart.js'
 import { getAllSkills, DEFAULT_SKILLS, checkPromotionEligibility } from '../lib/skills.js'
-import { formatScore, getTrend, getTrendHTML, getLatestScore, calcQualityRate, calcTotalReclamations } from '../lib/scoring.js'
+import { formatScore, getTrend, getTrendHTML, getLatestScore, calcQualityRate, calcTotalReclamations, calcWeightedScore } from '../lib/scoring.js'
 import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
 import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 
@@ -23,6 +23,7 @@ export function TeamManagement({ user }) {
     ])
     employees   = empRes.data  ?? []
     evaluations = evalRes.data ?? []
+    console.log('Manager View Data (all evaluations):', evaluations)
   }
 
   function filteredEmployees() {
@@ -137,18 +138,15 @@ export function TeamManagement({ user }) {
         <div class="card-header">
           <h4>Skills verwalten</h4>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center">
           ${allSkills.map(skill => {
             const has = empSkills.includes(skill.id)
-            return `
-              <button
-                class="btn btn-sm ${has ? 'btn-primary' : 'btn-ghost'} btn-toggle-skill"
-                data-skill="${skill.id}" data-has="${has}" data-emp="${emp.id}"
-                style="${has ? 'background:' + skill.color + ';border-color:' + skill.color : ''}"
-              >
-                ${skill.icon} ${skill.label} ${has ? '✓' : '+'}
-              </button>
-            `
+            return `<button
+              class="btn-toggle-skill"
+              data-skill="${skill.id}" data-has="${has}" data-emp="${emp.id}"
+              style="font-size:0.62rem;padding:2px 7px;line-height:1.6;background:${has ? skill.color : 'var(--cream-dark)'};color:${has ? '#fff' : 'var(--text-mid)'};${has ? '' : 'opacity:0.75;'}border:none;border-radius:20px;cursor:pointer"
+              title="${has ? 'Klicken zum Entfernen' : 'Klicken zum Hinzufügen'}"
+            >${skill.icon ? skill.icon + ' ' : ''}${skill.label}${has ? ' ✓' : ' +'}</button>`
           }).join('')}
         </div>
         <div style="display:flex;gap:8px">
@@ -161,6 +159,9 @@ export function TeamManagement({ user }) {
 
   function buildDetailView(emp) {
     const allEvals    = getEvals(emp.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    // Prefer the most recent row with a self-assessment for the comparison card
+    const comparisonRow = allEvals.find(e => e.self_scores && Object.keys(e.self_scores).length > 0) ?? allEvals[0]
+    console.log('Manager View Data:', { employee: emp.full_name, comparisonRow, self_scores: comparisonRow?.self_scores, manager_scores: comparisonRow?.manager_scores })
     // Only manager-scored entries count for PI, QPI, chart, history stats
     const evals       = allEvals.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
     const latestScore = getLatestScore(evals)
@@ -169,8 +170,22 @@ export function TeamManagement({ user }) {
     const totalRecs   = calcTotalReclamations(evals)
     const promotion   = checkPromotionEligibility(emp, evals)
 
-    const piResult = evals[0] ? calculatePerformance(mapEntryToEngine(evals[0], emp.level)) : null
+    const piResult = evals[0] ? calculatePerformance(mapEntryToEngine(evals[0], emp.level, emp)) : null
     const qpi      = calcQPI(evals, emp.level)
+
+    const mgrScores0    = evals[0]?.manager_scores ?? {}
+    const selfScores0   = evals[0]?.self_scores ?? null
+    const combinedScore = evals[0]
+      ? (() => {
+          const mgrW  = calcWeightedScore(mgrScores0, emp.level)
+          const selfW = selfScores0 ? calcWeightedScore(selfScores0, emp.level) : mgrW
+          return Math.round((0.75 * mgrW + 0.25 * selfW) * 10) / 10
+        })()
+      : null
+
+    const avgOf   = s => { if (!s) return null; const v = Object.values(s).filter(x => x > 0); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null }
+    const mgAvg   = avgOf(Object.keys(mgrScores0).length ? mgrScores0 : null)
+    const selfAvg = avgOf(selfScores0)
 
     const bonusBadgeColor = { Gold: 'var(--gold)', Silber: '#A0A0A0', Bronze: 'var(--terracotta)' }
 
@@ -184,16 +199,19 @@ export function TeamManagement({ user }) {
         ${piResult?.vetoAusgeloest ? `<span class="badge" style="background:var(--terracotta);color:#fff">⚠ Safety Veto</span>` : ''}
       </div>
 
-      <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
         <div class="stat-card">
           <div class="stat-label">Score</div>
-          <div class="stat-value">${latestScore !== null ? formatScore(latestScore) : '–'}</div>
-          <div class="stat-sub">/ 5.0 · ${getTrendHTML(trend)}</div>
+          <div class="stat-value">${combinedScore !== null ? formatScore(combinedScore) : '–'}</div>
+          <div class="stat-sub">/ 5.0${selfScores0 ? ' · 75/25' : ''} · ${getTrendHTML(trend)}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">PI Monat</div>
-          <div class="stat-value" style="color:var(--aubergine)">${piResult ? piResult.PI_Monat : '–'}</div>
-          <div class="stat-sub">von 100</div>
+          <div class="stat-value" style="color:${piResult?.vetoAusgeloest ? 'var(--terracotta)' : 'var(--aubergine)'}">${piResult ? piResult.PI_Monat : 'Ausstehend'}</div>
+          <div class="stat-sub">von 100${piResult?.vetoAusgeloest ? ' · ⚠ Veto' : piResult ? '' : ' · keine Daten'}</div>
+          ${piResult?.vetoAusgeloest && piResult.vetoCauses?.length ? `
+            <div style="font-size:0.62rem;color:var(--terracotta);margin-top:2px;line-height:1.4">Veto: ${piResult.vetoCauses.join(' · ')}</div>
+          ` : ''}
         </div>
         <div class="stat-card">
           <div class="stat-label">QPI Quartal</div>
@@ -214,7 +232,35 @@ export function TeamManagement({ user }) {
           </div>
           <div class="stat-sub">Kundenzufriedenheit</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-label">Umsatz Monat</div>
+          <div class="stat-value" style="font-size:1.3rem">
+            ${emp.total_revenue_current_month > 0 ? '€ ' + Number(emp.total_revenue_current_month).toFixed(0) : '–'}
+          </div>
+          <div class="stat-sub">Phase 4 · Quick-Tap</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Behandlungen</div>
+          <div class="stat-value" style="font-size:1.5rem">
+            ${emp.treatments_count_current_month > 0 ? emp.treatments_count_current_month : '–'}
+          </div>
+          <div class="stat-sub">aktueller Monat</div>
+        </div>
       </div>
+
+      <details open style="margin-bottom:16px">
+        <summary style="font-size:0.72rem;font-weight:600;color:var(--text-light);cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;padding:2px 0">
+          ◉ Debug · Berechnungsdetails
+        </summary>
+        <div style="font-size:0.72rem;background:rgba(61,43,53,0.05);border-radius:var(--radius-sm);padding:10px 14px;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px 20px;line-height:2;font-family:monospace">
+          <span>Manager-Schnitt:&nbsp;<strong>${mgAvg ?? '–'}&thinsp;/5</strong></span>
+          <span>Mitarbeiter-Schnitt:&nbsp;<strong>${selfAvg ?? '–'}&thinsp;/5</strong></span>
+          <span>Veto aktiv:&nbsp;<strong style="color:${piResult?.vetoAusgeloest ? 'var(--terracotta)' : '#6B8F71'}">${piResult?.vetoAusgeloest ? 'JA ⚠' : piResult ? 'Nein ✓' : '–'}</strong></span>
+          ${piResult?.vetoCauses?.length ? `<span style="color:var(--terracotta)">Durch:&nbsp;${piResult.vetoCauses.join(' · ')}</span>` : ''}
+          <span>Berechneter PI:&nbsp;<strong style="color:var(--aubergine)">${piResult ? piResult.PI_Monat : 'null'}</strong></span>
+          <span style="color:var(--text-light)">Szenario:&nbsp;<strong>${!piResult ? 'C – keine Daten' : piResult.vetoAusgeloest ? 'A – Veto' : piResult.PI_Monat === 0 ? 'B – Formel?' : '✓ OK'}</strong></span>
+        </div>
+      </details>
 
       ${promotion.eligible ? `
         <div style="background:var(--success);color:#fff;border-radius:var(--radius-md);padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
@@ -226,13 +272,6 @@ export function TeamManagement({ user }) {
         </div>
       ` : ''}
 
-      ${allEvals[0] ? buildComparisonCard(allEvals[0], emp.level, {
-          selfLabel:    'Selbsteinschätzung (Mitarbeiter)',
-          managerLabel: 'Meine Bewertung (Management)',
-        }) : ''}
-
-      ${buildSkillManager(emp)}
-
       <div class="card" style="margin-bottom:20px">
         <div class="card-header">
           <h4>PI-Verlauf</h4>
@@ -240,6 +279,13 @@ export function TeamManagement({ user }) {
         </div>
         <div class="chart-container"><canvas id="team-detail-chart"></canvas></div>
       </div>
+
+      ${comparisonRow ? buildComparisonCard(comparisonRow, emp.level, {
+          selfLabel:    'Selbsteinschätzung (Mitarbeiter)',
+          managerLabel: 'Meine Bewertung (Management)',
+        }) : ''}
+
+      ${buildSkillManager(emp)}
 
       <div class="card">
         <h4 style="margin-bottom:16px">Bewertungsverlauf</h4>
