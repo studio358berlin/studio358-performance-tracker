@@ -7,6 +7,7 @@ import {
   calcQualityRate, getLowScoringCriteria,
 } from '../lib/scoring.js'
 import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
+import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 import { ScoreModal } from '../components/ScoreModal.js'
 
 export function EmployeeView({ user, onNavigate }) {
@@ -146,91 +147,6 @@ export function EmployeeView({ user, onNavigate }) {
     `
   }
 
-  function buildComparisonCard(evaluation) {
-    const criteria  = getCriteriaForLevel(user.profile?.level || 'junior')
-    const mgScores  = evaluation.manager_scores ?? evaluation.scores ?? {}
-    const selfScores = evaluation.self_scores ?? null
-
-    function fmtTs(ts) {
-      if (!ts) return null
-      return new Date(ts).toLocaleString('de-DE', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-      }) + ' Uhr'
-    }
-
-    const managerTs = fmtTs(evaluation.manager_assessed_at ?? evaluation.created_at)
-    const selfTs    = fmtTs(evaluation.self_assessed_at)
-
-    const COL_SELF = '#4A90B8'
-    const COL_MGR  = 'var(--aubergine)'
-
-    function bar(val, color, bg) {
-      const pct = val != null ? (val / 5) * 100 : 0
-      return `
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="flex:1;height:7px;background:${bg};border-radius:4px;overflow:hidden">
-            <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.3s"></div>
-          </div>
-          <span style="font-size:0.75rem;font-weight:600;color:${color};min-width:28px;text-align:right">
-            ${val != null ? val + '/5' : '–'}
-          </span>
-        </div>
-      `
-    }
-
-    return `
-      <div style="margin-bottom:24px">
-        <div class="card">
-          <div class="card-header">
-            <h4>Bewertungsvergleich</h4>
-            <span style="font-size:0.8rem;color:var(--text-light)">
-              ${new Date(evaluation.created_at).toLocaleDateString('de-DE')}
-            </span>
-          </div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
-            <div style="padding:10px 14px;background:rgba(74,144,184,0.09);border-radius:var(--radius-sm);border-left:3px solid ${COL_SELF}">
-              <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:${COL_SELF}">
-                Meine Einschätzung
-              </div>
-              <div style="font-size:0.7rem;color:var(--text-light)">(Mitarbeiter)</div>
-              <div style="font-size:0.7rem;color:var(--text-light);margin-top:3px">
-                ${selfTs ? `Erstellt am ${selfTs}` : '<em>Noch nicht abgegeben</em>'}
-              </div>
-            </div>
-            <div style="padding:10px 14px;background:rgba(61,43,53,0.06);border-radius:var(--radius-sm);border-left:3px solid ${COL_MGR}">
-              <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:${COL_MGR}">
-                Bewertung Management
-              </div>
-              <div style="font-size:0.7rem;color:var(--text-light)">&nbsp;</div>
-              <div style="font-size:0.7rem;color:var(--text-light);margin-top:3px">
-                ${managerTs ? `Erstellt am ${managerTs}` : '–'}
-              </div>
-            </div>
-          </div>
-
-          ${criteria.map(c => {
-            const selfVal = selfScores ? (selfScores[c.id] ?? null) : null
-            const mgVal   = mgScores[c.id] ?? null
-            return `
-              <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--cream-dark)">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-                  <span style="font-size:0.82rem;font-weight:500;color:var(--text-dark)">${c.label}</span>
-                  <span style="font-size:0.72rem;color:var(--text-light)">${Math.round(c.weight * 100)}%</span>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                  ${bar(selfVal, COL_SELF, 'rgba(74,144,184,0.12)')}
-                  ${bar(mgVal,   COL_MGR,  'rgba(61,43,53,0.1)')}
-                </div>
-              </div>
-            `
-          }).join('')}
-        </div>
-      </div>
-    `
-  }
-
   function buildHTML() {
     if (selectedSOPId) {
       const sop = sops.find(s => s.id === selectedSOPId)
@@ -309,7 +225,7 @@ export function EmployeeView({ user, onNavigate }) {
       </div>
 
       ${latest
-        ? buildComparisonCard(latest)
+        ? buildComparisonCard(latest, level)
         : `<div class="card" style="margin-bottom:24px"><div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Bewertung vorhanden.</p></div></div>`
       }
 
@@ -378,8 +294,13 @@ export function EmployeeView({ user, onNavigate }) {
     })
 
     setTimeout(() => {
-      const chart = LineChart('employee-chart', evaluations)
-      chart.render()
+      const level  = user.profile?.level || 'junior'
+      const sorted = [...evaluations].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      const labels = sorted.map(e => e.evaluation_month
+        ? new Date(e.evaluation_month + 'T12:00:00').toLocaleDateString('de-DE', { month: 'short', year: '2-digit' })
+        : new Date(e.created_at).toLocaleDateString('de-DE', { month: 'short', year: '2-digit' }))
+      const values = sorted.map(e => calculatePerformance(mapEntryToEngine(e, level)).PI_Monat)
+      LineChart('employee-chart', { labels, values }).render()
     }, 0)
   }
 

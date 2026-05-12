@@ -5,6 +5,7 @@ import { LineChart } from '../components/LineChart.js'
 import { getAllSkills, DEFAULT_SKILLS, checkPromotionEligibility } from '../lib/skills.js'
 import { formatScore, getTrend, getTrendHTML, getLatestScore, calcQualityRate, calcTotalReclamations } from '../lib/scoring.js'
 import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
+import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 
 export function TeamManagement({ user }) {
   let employees      = []
@@ -223,11 +224,16 @@ export function TeamManagement({ user }) {
         </div>
       ` : ''}
 
+      ${evals[0] ? buildComparisonCard(evals[0], emp.level, {
+          selfLabel:    'Selbsteinschätzung (Mitarbeiter)',
+          managerLabel: 'Meine Bewertung (Management)',
+        }) : ''}
+
       ${buildSkillManager(emp)}
 
       <div class="card" style="margin-bottom:20px">
         <div class="card-header">
-          <h4>Score-Verlauf</h4>
+          <h4>PI-Verlauf</h4>
           <button class="btn btn-sm btn-accent" id="new-eval-btn" data-id="${emp.id}">+ Bewertung</button>
         </div>
         <div class="chart-container"><canvas id="team-detail-chart"></canvas></div>
@@ -372,8 +378,14 @@ export function TeamManagement({ user }) {
 
     setTimeout(() => {
       if (selectedEmployee) {
-        const evals = getEvals(selectedEmployee.id)
-        LineChart('team-detail-chart', evals).render()
+        const evals  = getEvals(selectedEmployee.id)
+        const level  = selectedEmployee.level || 'junior'
+        const sorted = [...evals].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        const labels = sorted.map(e => e.evaluation_month
+          ? new Date(e.evaluation_month + 'T12:00:00').toLocaleDateString('de-DE', { month: 'short', year: '2-digit' })
+          : new Date(e.created_at).toLocaleDateString('de-DE', { month: 'short', year: '2-digit' }))
+        const values = sorted.map(e => calculatePerformance(mapEntryToEngine(e, level)).PI_Monat)
+        LineChart('team-detail-chart', { labels, values }).render()
       }
     }, 0)
   }
