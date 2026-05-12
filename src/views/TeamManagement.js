@@ -244,7 +244,7 @@ export function TeamManagement({ user }) {
               <tbody>
                 ${evals.map(e => `
                   <tr>
-                    <td style="color:var(--text-mid)">${new Date(e.created_at).toLocaleDateString('de-DE')}</td>
+                    <td style="color:var(--text-mid)">${e.evaluation_month ? new Date(e.evaluation_month + 'T12:00:00').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) : new Date(e.created_at).toLocaleDateString('de-DE')}</td>
                     <td style="font-weight:600;color:var(--aubergine)">${formatScore(e.score)}</td>
                     <td style="color:${(e.reworks_count ?? e.complaints_count ?? 0) > 0 ? 'var(--terracotta)' : 'var(--text-light)'}">
                       ${e.reworks_count ?? e.complaints_count ?? 0}

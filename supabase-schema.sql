@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS performance_entries (
   notes                TEXT,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  UNIQUE (employee_id)
+  evaluation_month     DATE        NOT NULL DEFAULT DATE_TRUNC('month', NOW())::DATE,
+  UNIQUE (employee_id, evaluation_month)
 );
 
 -- SOPS (Standard Operating Procedures / Wissensdatenbank)

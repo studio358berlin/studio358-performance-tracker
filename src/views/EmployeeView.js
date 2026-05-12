@@ -337,7 +337,7 @@ export function EmployeeView({ user, onNavigate }) {
                     : null
                   return `
                     <tr>
-                      <td style="color:var(--text-mid)">${new Date(e.created_at).toLocaleDateString('de-DE')}</td>
+                      <td style="color:var(--text-mid)">${e.evaluation_month ? new Date(e.evaluation_month + 'T12:00:00').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) : new Date(e.created_at).toLocaleDateString('de-DE')}</td>
                       <td style="font-weight:600;color:var(--aubergine)">${formatScore(e.score)}</td>
                       <td style="color:${qr !== null && qr >= 95 ? 'var(--success)' : 'var(--terracotta)'}">
                         ${qr !== null ? qr + '%' : '–'}

@@ -202,7 +202,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         console.log('Sending to DB (upsert fallback):', upsertPayload)
         ;({ data, error } = await supabase
           .from('performance_entries')
-          .upsert(upsertPayload, { onConflict: 'employee_id' }))
+          .upsert(upsertPayload, { onConflict: 'employee_id,evaluation_month' }))
         console.log('[ScoreModal] Upsert fallback result:', { data, error })
       }
     } else {
@@ -215,6 +215,10 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
       const punctScore       = scores.punctuality ?? 3
       const punctuality_rate = punctScore >= 5 ? 1.0 : punctScore >= 4 ? 0.97 : punctScore >= 3 ? 0.90 : punctScore >= 2 ? 0.80 : 0.65
 
+      // First day of the current month, e.g. 2025-05-01
+      const now = new Date()
+      const evaluation_month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+
       const payload = {
         employee_id:         employee.id,
         evaluator_id:        evaluatorId,
@@ -222,6 +226,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         manager_scores:      scores,
         manager_assessed_at: new Date().toISOString(),
         score,
+        evaluation_month,
         appointments_count,
         reworks_count,
         punctuality_rate,
@@ -231,7 +236,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
       console.log('Sending to DB:', payload)
       ;({ data, error } = await supabase
         .from('performance_entries')
-        .upsert(payload, { onConflict: 'employee_id' }))
+        .upsert(payload, { onConflict: 'employee_id,evaluation_month' }))
       console.log('[ScoreModal] Upsert result:', { data, error })
     }
 
