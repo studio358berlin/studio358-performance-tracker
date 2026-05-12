@@ -189,10 +189,15 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
       ;({ data, error } = await supabase.rpc('submit_self_assessment', { p_self_scores: scores }))
       console.log('[ScoreModal] RPC Ergebnis:', { data, error })
     } else {
-      const complaints_count   = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
+      const reworks_count      = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
       const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
       const feedback           = overlay.querySelector('#customer-feedback')?.value
       const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
+
+      // Derive punctuality_rate from the punctuality star score (proxy, no separate form field)
+      const punctScore      = scores.punctuality ?? 3
+      const punctuality_rate = punctScore >= 5 ? 1.0 : punctScore >= 4 ? 0.97 : punctScore >= 3 ? 0.90 : punctScore >= 2 ? 0.80 : 0.65
+
       const payload = {
         employee_id:          employee.id,
         evaluator_id:         evaluatorId,
@@ -200,11 +205,9 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         manager_scores:       scores,
         manager_assessed_at:  new Date().toISOString(),
         score,
-        creativity:           scores.creativity  ?? 0,
-        reliability:          scores.punctuality ?? 0,
-        productivity:         scores.revenue     ?? 0,
         appointments_count,
-        complaints_count,
+        reworks_count,
+        punctuality_rate,
         customer_feedback:    feedback ? Number(feedback) : null,
         notes:                notes || null,
       }

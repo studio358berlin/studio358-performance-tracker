@@ -20,7 +20,7 @@ export function calcQualityRate(evaluations) {
     (sum, e) => sum + (e.appointments_count ?? 20), 0
   )
   const totalReclamations = evaluations.reduce(
-    (sum, e) => sum + (e.complaints_count ?? 0), 0
+    (sum, e) => sum + (e.reworks_count ?? e.complaints_count ?? 0), 0
   )
 
   if (totalAppointments === 0) return 100
@@ -29,7 +29,7 @@ export function calcQualityRate(evaluations) {
 }
 
 export function calcTotalReclamations(evaluations) {
-  return evaluations?.reduce((sum, e) => sum + (e.complaints_count ?? 0), 0) ?? 0
+  return evaluations?.reduce((sum, e) => sum + (e.reworks_count ?? e.complaints_count ?? 0), 0) ?? 0
 }
 
 // ── Trend ───────────────────────────────────────────────────────────────────

@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS performance_entries (
 
   -- Objective quality data
   appointments_count   INTEGER     NOT NULL DEFAULT 20,
-  complaints_count     INTEGER     NOT NULL DEFAULT 0,
+  reworks_count        INTEGER     NOT NULL DEFAULT 0,
+  punctuality_rate     NUMERIC(4,3) NOT NULL DEFAULT 1.0,
   customer_feedback    NUMERIC(3,1),
 
   is_self_assessment   BOOLEAN     NOT NULL DEFAULT FALSE,

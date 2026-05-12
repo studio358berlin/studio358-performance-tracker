@@ -246,8 +246,8 @@ export function TeamManagement({ user }) {
                   <tr>
                     <td style="color:var(--text-mid)">${new Date(e.created_at).toLocaleDateString('de-DE')}</td>
                     <td style="font-weight:600;color:var(--aubergine)">${formatScore(e.score)}</td>
-                    <td style="color:${(e.complaints_count ?? 0) > 0 ? 'var(--terracotta)' : 'var(--text-light)'}">
-                      ${e.complaints_count ?? 0}
+                    <td style="color:${(e.reworks_count ?? e.complaints_count ?? 0) > 0 ? 'var(--terracotta)' : 'var(--text-light)'}">
+                      ${e.reworks_count ?? e.complaints_count ?? 0}
                     </td>
                     <td style="color:var(--text-light);font-size:0.8rem">${e.notes || '–'}</td>
                   </tr>

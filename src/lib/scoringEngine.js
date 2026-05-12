@@ -209,7 +209,7 @@ export function mapEntryToEngine(entry, level) {
     }
   }
 
-  const nachbesserungen            = entry.complaints_count ?? 0
+  const nachbesserungen            = entry.reworks_count ?? entry.complaints_count ?? 0
   const kundenfeedbackDurchschnitt = entry.customer_feedback ?? managerScores.Kundenmanagement
 
   const zuvScore   = managerScores.Zuverlaessigkeit

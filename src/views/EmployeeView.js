@@ -331,8 +331,9 @@ export function EmployeeView({ user, onNavigate }) {
               </thead>
               <tbody>
                 ${evaluations.map(e => {
+                  const reworks = e.reworks_count ?? e.complaints_count ?? 0
                   const qr = e.appointments_count > 0
-                    ? Math.round(((e.appointments_count - (e.complaints_count ?? 0)) / e.appointments_count) * 100)
+                    ? Math.round(((e.appointments_count - reworks) / e.appointments_count) * 100)
                     : null
                   return `
                     <tr>
