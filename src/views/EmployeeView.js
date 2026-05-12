@@ -150,7 +150,9 @@ export function EmployeeView({ user, onNavigate }) {
 
   function buildScoreBreakdown(evaluation) {
     const criteria = getCriteriaForLevel(user.profile?.level || 'junior')
-    const scores   = evaluation.scores ?? {}
+    const scores = evaluation.is_self_assessment
+      ? (evaluation.self_scores    ?? evaluation.scores ?? {})
+      : (evaluation.manager_scores ?? evaluation.scores ?? {})
 
     return `
       <div class="criteria-list">
