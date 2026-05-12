@@ -7,9 +7,11 @@ import {
   calcQualityRate, getLowScoringCriteria,
 } from '../lib/scoring.js'
 import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
+import { ScoreModal } from '../components/ScoreModal.js'
 
 export function EmployeeView({ user, onNavigate }) {
-  let evaluations = []
+  let evaluations    = []   // manager evaluations only
+  let selfAssessments = []  // self-assessment entries only
   let sops = []
   let selectedSOPId = null
   let container = null
@@ -19,11 +21,32 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
     ])
-    evaluations = evalRes.data ?? []
-    sops        = sopRes.data  ?? []
+    const all = evalRes.data ?? []
+    // Separate manager evals from self-assessments so PI calculations stay correct
+    evaluations     = all.filter(e => !e.is_self_assessment)
+    selfAssessments = all.filter(e =>  e.is_self_assessment)
+    sops            = sopRes.data ?? []
   }
 
   function getLatest() { return evaluations[0] ?? null }
+
+  function openSelfAssessmentModal() {
+    const employee = {
+      id:        user.id,
+      full_name: user.profile?.full_name || user.email,
+      level:     user.profile?.level || 'junior',
+    }
+    const modal = ScoreModal({
+      employee,
+      evaluatorId:      user.id,
+      isSelfAssessment: true,
+      onSaved: async () => {
+        await loadData()
+        rerender()
+      },
+    })
+    document.body.appendChild(modal.render())
+  }
 
   function buildSkillCards() {
     const empSkills   = user.profile?.skills ?? []
@@ -165,24 +188,38 @@ export function EmployeeView({ user, onNavigate }) {
     const qualityRate = calcQualityRate(evaluations)
     const level       = user.profile?.level || 'junior'
 
-    const piResult  = latest ? calculatePerformance(mapEntryToEngine(latest, level)) : null
-    const qpi       = calcQPI(evaluations, level)
-    const bonusStufe = piResult?.bonusStufe ?? null
+    const latestSelf  = selfAssessments[0] ?? null
+    const piResult    = latest ? calculatePerformance(mapEntryToEngine(latest, level, latestSelf)) : null
+    const qpi         = calcQPI(evaluations, level, selfAssessments)
+    const bonusStufe  = piResult?.bonusStufe ?? null
 
     const bonusBadgeColor = {
-      Gold:       'var(--gold)',
-      Silber:     '#A0A0A0',
-      Bronze:     'var(--terracotta)',
+      Gold:         'var(--gold)',
+      Silber:       '#A0A0A0',
+      Bronze:       'var(--terracotta)',
       'Kein Bonus': 'var(--text-light)',
     }
 
+    const selfDate = latestSelf
+      ? new Date(latestSelf.created_at).toLocaleDateString('de-DE')
+      : null
+
     return `
-      <div class="page-header">
-        <h2>Meine Performance</h2>
-        <p style="color:var(--text-light);font-size:0.875rem">
-          Willkommen, ${user.profile?.full_name || user.email}
-          · <span class="badge ${level === 'senior' ? 'badge-aubergine' : 'badge-gold'}">${level}</span>
-        </p>
+      <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <h2>Meine Performance</h2>
+          <p style="color:var(--text-light);font-size:0.875rem">
+            Willkommen, ${user.profile?.full_name || user.email}
+            · <span class="badge ${level === 'senior' ? 'badge-aubergine' : 'badge-gold'}">${level}</span>
+          </p>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <button class="btn btn-accent btn-sm" id="self-assess-btn">Selbstbewertung abgeben</button>
+          ${selfDate
+            ? `<span style="font-size:0.75rem;color:var(--text-light)">Letzte Selbstbewertung: ${selfDate}</span>`
+            : `<span style="font-size:0.75rem;color:var(--text-light)">Noch keine Selbstbewertung</span>`
+          }
+        </div>
       </div>
 
       <div class="stat-grid">
@@ -274,6 +311,8 @@ export function EmployeeView({ user, onNavigate }) {
   }
 
   function attachEvents() {
+    container.querySelector('#self-assess-btn')?.addEventListener('click', openSelfAssessmentModal)
+
     container.querySelector('#goto-sops')?.addEventListener('click', () => {
       onNavigate?.('sops')
     })

@@ -2,10 +2,13 @@ import { supabase } from '../lib/supabase.js'
 import { getCriteriaForLevel } from '../lib/criteria.js'
 import { calcWeightedScore } from '../lib/scoring.js'
 
-export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
+export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, onSaved, onClose }) {
   const criteria = getCriteriaForLevel(employee.level || 'junior')
   const scores = {}
   criteria.forEach(c => { scores[c.id] = 0 })
+
+  const title     = isSelfAssessment ? 'Selbstbewertung' : 'Bewertung'
+  const saveLabel = isSelfAssessment ? 'Selbstbewertung speichern' : 'Bewertung speichern'
 
   function renderStars(criterionId, value) {
     return Array.from({ length: 5 }, (_, i) => `
@@ -23,9 +26,10 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
       <div class="modal">
         <div class="modal-header">
           <div>
-            <h3>Bewertung</h3>
+            <h3>${title}</h3>
             <p style="color:var(--text-light);font-size:0.875rem;margin-top:4px">
               ${employee.full_name} · ${employee.level || 'Junior'}
+              ${isSelfAssessment ? ' · <em>Wie siehst du deine eigene Leistung?</em>' : ''}
             </p>
           </div>
           <button class="modal-close" id="modal-close-btn">✕</button>
@@ -46,6 +50,7 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
           `).join('')}
         </div>
 
+        ${!isSelfAssessment ? `
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--cream-dark)">
           <h4 style="margin-bottom:14px;font-size:0.95rem">Qualitätsdaten</h4>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -77,6 +82,11 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
               placeholder="Beobachtungen, Stärken, Entwicklungsbereiche…"></textarea>
           </div>
         </div>
+        ` : `
+        <div style="margin-top:16px;padding:12px 16px;background:var(--cream);border-radius:var(--radius-sm);font-size:0.8rem;color:var(--text-mid)">
+          Deine Selbstbewertung wird mit der Manager-Bewertung kombiniert und beeinflusst deinen Performance Index.
+        </div>
+        `}
 
         <div id="modal-error" class="login-error" style="display:none;margin-top:12px"></div>
 
@@ -86,7 +96,7 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
           </div>
           <div style="display:flex;gap:10px">
             <button class="btn btn-ghost" id="cancel-btn">Abbrechen</button>
-            <button class="btn btn-primary" id="save-btn">Bewertung speichern</button>
+            <button class="btn btn-primary" id="save-btn">${saveLabel}</button>
           </div>
         </div>
       </div>
@@ -124,8 +134,8 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
   }
 
   async function save(overlay) {
-    const saveBtn  = overlay.querySelector('#save-btn')
-    const errorEl  = overlay.querySelector('#modal-error')
+    const saveBtn = overlay.querySelector('#save-btn')
+    const errorEl = overlay.querySelector('#modal-error')
 
     const allScored = criteria.every(c => scores[c.id] > 0)
     if (!allScored) {
@@ -138,32 +148,46 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
     saveBtn.textContent = 'Speichern…'
     errorEl.style.display = 'none'
 
-    const score              = calcWeightedScore(scores, employee.level || 'junior')
-    const complaints_count   = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
-    const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
-    const feedback           = overlay.querySelector('#customer-feedback')?.value
-    const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
+    const score = calcWeightedScore(scores, employee.level || 'junior')
 
-    const { error } = await supabase.from('performance_entries').insert({
-      employee_id:       employee.id,
-      evaluator_id:      evaluatorId,
-      score,
-      manager_scores:    scores,
-      creativity:        scores.creativity   ?? 0,
-      reliability:       scores.punctuality  ?? 0,
-      productivity:      scores.revenue      ?? 0,
-      appointments_count,
-      complaints_count,
-      customer_feedback: feedback ? Number(feedback) : null,
-      notes:             notes || null,
-    })
+    let payload
+    if (isSelfAssessment) {
+      payload = {
+        employee_id:        employee.id,
+        evaluator_id:       employee.id,
+        is_self_assessment: true,
+        self_scores:        scores,
+        score,
+      }
+    } else {
+      const complaints_count   = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
+      const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
+      const feedback           = overlay.querySelector('#customer-feedback')?.value
+      const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
+      payload = {
+        employee_id:        employee.id,
+        evaluator_id:       evaluatorId,
+        is_self_assessment: false,
+        manager_scores:     scores,
+        score,
+        creativity:         scores.creativity  ?? 0,
+        reliability:        scores.punctuality ?? 0,
+        productivity:       scores.revenue     ?? 0,
+        appointments_count,
+        complaints_count,
+        customer_feedback:  feedback ? Number(feedback) : null,
+        notes:              notes || null,
+      }
+    }
+
+    const { error } = await supabase.from('performance_entries').insert(payload)
 
     if (error) {
       console.error('performance_entries INSERT fehlgeschlagen:', error)
       errorEl.textContent = 'Fehler: ' + error.message
       errorEl.style.display = 'block'
       saveBtn.disabled = false
-      saveBtn.textContent = 'Bewertung speichern'
+      saveBtn.textContent = saveLabel
       return
     }
 

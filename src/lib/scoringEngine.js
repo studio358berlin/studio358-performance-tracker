@@ -176,15 +176,14 @@ export function calculatePerformance({ level, managerScores, selfScores, objekti
 
 /**
  * Maps a performance_entries row to calculatePerformance() input.
- * Uses manager_scores JSONB when available (new entries), otherwise
- * falls back to individual stored columns and the overall score.
+ * @param {object}  entry      - manager evaluation row from performance_entries
+ * @param {string}  level      - 'junior' | 'senior'
+ * @param {object}  [selfEntry] - optional self-assessment row (is_self_assessment = true)
  */
-export function mapEntryToEngine(entry, level) {
+export function mapEntryToEngine(entry, level, selfEntry = null) {
   const ms  = entry.manager_scores ?? {}
   const lvl = (level === 'senior' || level === 'Senior') ? 'Senior' : 'Junior'
 
-  // Individual criterion scores stored in manager_scores JSONB (new entries)
-  // or estimated from legacy columns where available.
   const fallback = entry.score ?? 3
 
   const managerScores = {
@@ -197,18 +196,28 @@ export function mapEntryToEngine(entry, level) {
     Kreativitaet_Innovation: ms.creativity  ?? entry.creativity   ?? fallback,
   }
 
-  // Derive objective data from what's stored
-  const nachbesserungen          = entry.complaints_count ?? 0
+  // Map self-assessment scores if a self-assessment entry is provided
+  let selfScores = null
+  if (selfEntry?.self_scores) {
+    const ss = selfEntry.self_scores
+    selfScores = {
+      Sauberkeit_Hygiene:      ss.hygiene     ?? managerScores.Sauberkeit_Hygiene,
+      Technische_Exzellenz:    ss.technique   ?? managerScores.Technische_Exzellenz,
+      Kundenmanagement:        ss.service     ?? managerScores.Kundenmanagement,
+      Mentoring:               ss.mentoring   ?? managerScores.Mentoring,
+      Umsatz_Produktivitaet:   ss.revenue     ?? managerScores.Umsatz_Produktivitaet,
+      Zuverlaessigkeit:        ss.punctuality ?? managerScores.Zuverlaessigkeit,
+      Kreativitaet_Innovation: ss.creativity  ?? managerScores.Kreativitaet_Innovation,
+    }
+  }
+
+  const nachbesserungen            = entry.complaints_count ?? 0
   const kundenfeedbackDurchschnitt = entry.customer_feedback ?? managerScores.Kundenmanagement
 
-  // terminTreueQuote / arbeitsPuenktlichkeitsQuote are not tracked in the DB.
-  // Use the manager's reliability score as a proxy so the veto stays meaningful.
-  const zuvScore = managerScores.Zuverlaessigkeit
-  const proxyQuote = zuvScore >= 5 ? 1.0
-    : zuvScore >= 4 ? 0.97
-    : zuvScore >= 3 ? 0.90
-    : zuvScore >= 2 ? 0.80
-    : 0.65
+  // terminTreueQuote / arbeitsPuenktlichkeitsQuote not tracked in DB.
+  // Proxy from manager reliability score so the veto remains meaningful.
+  const zuvScore   = managerScores.Zuverlaessigkeit
+  const proxyQuote = zuvScore >= 5 ? 1.0 : zuvScore >= 4 ? 0.97 : zuvScore >= 3 ? 0.90 : zuvScore >= 2 ? 0.80 : 0.65
 
   const objektiveDaten = {
     terminTreueQuote:            proxyQuote,
@@ -217,19 +226,23 @@ export function mapEntryToEngine(entry, level) {
     kundenfeedbackDurchschnitt,
   }
 
-  return { level: lvl, managerScores, objektiveDaten }
+  return { level: lvl, managerScores, selfScores, objektiveDaten }
 }
 
 /**
- * Computes QPI from the three most recent evaluations.
- * Returns null if fewer than 3 evaluations are available.
+ * Computes QPI from the three most recent manager evaluations.
+ * @param {object[]} evaluations    - manager-only entries (is_self_assessment = false)
+ * @param {string}   level
+ * @param {object[]} [selfAssessments] - self-assessment entries to pair with evals
  */
-export function calcQPI(evaluations, level) {
+export function calcQPI(evaluations, level, selfAssessments = []) {
   const sorted = [...evaluations].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   if (sorted.length < 3) return null
 
+  const latestSelf = selfAssessments[0] ?? null
+
   const [e0, e1, e2] = sorted
-  const pi0 = calculatePerformance(mapEntryToEngine(e0, level)).PI_Monat
+  const pi0 = calculatePerformance(mapEntryToEngine(e0, level, latestSelf)).PI_Monat
   const pi1 = calculatePerformance(mapEntryToEngine(e1, level)).PI_Monat
   const pi2 = calculatePerformance(mapEntryToEngine(e2, level)).PI_Monat
 
