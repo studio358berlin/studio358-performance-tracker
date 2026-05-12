@@ -150,40 +150,35 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, on
 
     const score = calcWeightedScore(scores, employee.level || 'junior')
 
-    let payload
+    let error
+
     if (isSelfAssessment) {
-      payload = {
-        employee_id:        employee.id,
-        evaluator_id:       employee.id,
-        is_self_assessment: true,
-        self_scores:        scores,
-        score,
-      }
+      // UPDATE the latest manager evaluation row via RPC (employees can't UPDATE directly)
+      ;({ error } = await supabase.rpc('submit_self_assessment', { p_self_scores: scores }))
     } else {
       const complaints_count   = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
       const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
       const feedback           = overlay.querySelector('#customer-feedback')?.value
       const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
-      payload = {
-        employee_id:        employee.id,
-        evaluator_id:       evaluatorId,
-        is_self_assessment: false,
-        manager_scores:     scores,
+      ;({ error } = await supabase.from('performance_entries').insert({
+        employee_id:          employee.id,
+        evaluator_id:         evaluatorId,
+        is_self_assessment:   false,
+        manager_scores:       scores,
+        manager_assessed_at:  new Date().toISOString(),
         score,
-        creativity:         scores.creativity  ?? 0,
-        reliability:        scores.punctuality ?? 0,
-        productivity:       scores.revenue     ?? 0,
+        creativity:           scores.creativity  ?? 0,
+        reliability:          scores.punctuality ?? 0,
+        productivity:         scores.revenue     ?? 0,
         appointments_count,
         complaints_count,
-        customer_feedback:  feedback ? Number(feedback) : null,
-        notes:              notes || null,
-      }
+        customer_feedback:    feedback ? Number(feedback) : null,
+        notes:                notes || null,
+      }))
     }
 
-    const { error } = await supabase.from('performance_entries').insert(payload)
-
     if (error) {
-      console.error('performance_entries INSERT fehlgeschlagen:', error)
+      console.error('ScoreModal save fehlgeschlagen:', error)
       errorEl.textContent = 'Fehler: ' + error.message
       errorEl.style.display = 'block'
       saveBtn.disabled = false

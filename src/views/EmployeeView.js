@@ -10,8 +10,7 @@ import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringE
 import { ScoreModal } from '../components/ScoreModal.js'
 
 export function EmployeeView({ user, onNavigate }) {
-  let evaluations    = []   // manager evaluations only
-  let selfAssessments = []  // self-assessment entries only
+  let evaluations = []
   let sops = []
   let selectedSOPId = null
   let container = null
@@ -21,11 +20,9 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
     ])
-    const all = evalRes.data ?? []
-    // Separate manager evals from self-assessments so PI calculations stay correct
-    evaluations     = all.filter(e => !e.is_self_assessment)
-    selfAssessments = all.filter(e =>  e.is_self_assessment)
-    sops            = sopRes.data ?? []
+    // Only keep manager evaluations; old is_self_assessment=true rows are excluded
+    evaluations = (evalRes.data ?? []).filter(e => !e.is_self_assessment)
+    sops        = sopRes.data ?? []
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -148,33 +145,87 @@ export function EmployeeView({ user, onNavigate }) {
     `
   }
 
-  function buildScoreBreakdown(evaluation) {
-    const criteria = getCriteriaForLevel(user.profile?.level || 'junior')
-    const scores = evaluation.is_self_assessment
-      ? (evaluation.self_scores    ?? evaluation.scores ?? {})
-      : (evaluation.manager_scores ?? evaluation.scores ?? {})
+  function buildComparisonCard(evaluation) {
+    const criteria  = getCriteriaForLevel(user.profile?.level || 'junior')
+    const mgScores  = evaluation.manager_scores ?? evaluation.scores ?? {}
+    const selfScores = evaluation.self_scores ?? null
+
+    function fmtTs(ts) {
+      if (!ts) return null
+      return new Date(ts).toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      }) + ' Uhr'
+    }
+
+    const managerTs = fmtTs(evaluation.manager_assessed_at ?? evaluation.created_at)
+    const selfTs    = fmtTs(evaluation.self_assessed_at)
+
+    const COL_SELF = '#4A90B8'
+    const COL_MGR  = 'var(--aubergine)'
+
+    function bar(val, color, bg) {
+      const pct = val != null ? (val / 5) * 100 : 0
+      return `
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;height:7px;background:${bg};border-radius:4px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.3s"></div>
+          </div>
+          <span style="font-size:0.75rem;font-weight:600;color:${color};min-width:28px;text-align:right">
+            ${val != null ? val + '/5' : '–'}
+          </span>
+        </div>
+      `
+    }
 
     return `
-      <div class="criteria-list">
-        ${criteria.map(c => {
-          const val = scores[c.id] ?? 0
-          const pct = (val / 5) * 100
-          return `
-            <div class="criterion-item">
-              <div class="criterion-header">
-                <span class="criterion-name">${c.label}</span>
-                <span style="font-weight:600;color:var(--aubergine)">${val}/5</span>
+      <div style="margin-bottom:24px">
+        <div class="card">
+          <div class="card-header">
+            <h4>Bewertungsvergleich</h4>
+            <span style="font-size:0.8rem;color:var(--text-light)">
+              ${new Date(evaluation.created_at).toLocaleDateString('de-DE')}
+            </span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+            <div style="padding:10px 14px;background:rgba(74,144,184,0.09);border-radius:var(--radius-sm);border-left:3px solid ${COL_SELF}">
+              <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:${COL_SELF}">
+                Meine Einschätzung
               </div>
-              <div class="score-bar">
-                <div class="score-bar-fill" style="width:${pct}%"></div>
-              </div>
-              <div style="display:flex;justify-content:space-between;margin-top:2px">
-                <span style="font-size:0.7rem;color:var(--text-light)">${SCORE_LABELS[val] || '–'}</span>
-                <span style="font-size:0.7rem;color:var(--text-light)">${Math.round(c.weight * 100)}%</span>
+              <div style="font-size:0.7rem;color:var(--text-light)">(Mitarbeiter)</div>
+              <div style="font-size:0.7rem;color:var(--text-light);margin-top:3px">
+                ${selfTs ? `Erstellt am ${selfTs}` : '<em>Noch nicht abgegeben</em>'}
               </div>
             </div>
-          `
-        }).join('')}
+            <div style="padding:10px 14px;background:rgba(61,43,53,0.06);border-radius:var(--radius-sm);border-left:3px solid ${COL_MGR}">
+              <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:${COL_MGR}">
+                Bewertung Management
+              </div>
+              <div style="font-size:0.7rem;color:var(--text-light)">&nbsp;</div>
+              <div style="font-size:0.7rem;color:var(--text-light);margin-top:3px">
+                ${managerTs ? `Erstellt am ${managerTs}` : '–'}
+              </div>
+            </div>
+          </div>
+
+          ${criteria.map(c => {
+            const selfVal = selfScores ? (selfScores[c.id] ?? null) : null
+            const mgVal   = mgScores[c.id] ?? null
+            return `
+              <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--cream-dark)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+                  <span style="font-size:0.82rem;font-weight:500;color:var(--text-dark)">${c.label}</span>
+                  <span style="font-size:0.72rem;color:var(--text-light)">${Math.round(c.weight * 100)}%</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  ${bar(selfVal, COL_SELF, 'rgba(74,144,184,0.12)')}
+                  ${bar(mgVal,   COL_MGR,  'rgba(61,43,53,0.1)')}
+                </div>
+              </div>
+            `
+          }).join('')}
+        </div>
       </div>
     `
   }
@@ -190,10 +241,9 @@ export function EmployeeView({ user, onNavigate }) {
     const qualityRate = calcQualityRate(evaluations)
     const level       = user.profile?.level || 'junior'
 
-    const latestSelf  = selfAssessments[0] ?? null
-    const piResult    = latest ? calculatePerformance(mapEntryToEngine(latest, level, latestSelf)) : null
-    const qpi         = calcQPI(evaluations, level, selfAssessments)
-    const bonusStufe  = piResult?.bonusStufe ?? null
+    const piResult   = latest ? calculatePerformance(mapEntryToEngine(latest, level)) : null
+    const qpi        = calcQPI(evaluations, level)
+    const bonusStufe = piResult?.bonusStufe ?? null
 
     const bonusBadgeColor = {
       Gold:         'var(--gold)',
@@ -202,8 +252,8 @@ export function EmployeeView({ user, onNavigate }) {
       'Kein Bonus': 'var(--text-light)',
     }
 
-    const selfDate = latestSelf
-      ? new Date(latestSelf.created_at).toLocaleDateString('de-DE')
+    const selfDate = latest?.self_assessed_at
+      ? new Date(latest.self_assessed_at).toLocaleDateString('de-DE')
       : null
 
     return `
@@ -217,10 +267,9 @@ export function EmployeeView({ user, onNavigate }) {
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <button class="btn btn-accent btn-sm" id="self-assess-btn">Selbstbewertung abgeben</button>
-          ${selfDate
-            ? `<span style="font-size:0.75rem;color:var(--text-light)">Letzte Selbstbewertung: ${selfDate}</span>`
-            : `<span style="font-size:0.75rem;color:var(--text-light)">Noch keine Selbstbewertung</span>`
-          }
+          <span style="font-size:0.75rem;color:var(--text-light)">
+            ${selfDate ? `Letzte Selbstbewertung: ${selfDate}` : 'Noch keine Selbstbewertung'}
+          </span>
         </div>
       </div>
 
@@ -253,23 +302,15 @@ export function EmployeeView({ user, onNavigate }) {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px" class="detail-grid">
-        <div class="card">
-          <div class="card-header"><h4>Score-Verlauf</h4></div>
-          <div class="chart-container"><canvas id="employee-chart"></canvas></div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h4>Letzte Bewertung</h4>
-            ${latest ? `<span style="font-size:0.8rem;color:var(--text-light)">${new Date(latest.created_at).toLocaleDateString('de-DE')}</span>` : ''}
-          </div>
-          ${latest
-            ? buildScoreBreakdown(latest)
-            : `<div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Bewertung vorhanden.</p></div>`
-          }
-        </div>
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header"><h4>Score-Verlauf</h4></div>
+        <div class="chart-container"><canvas id="employee-chart"></canvas></div>
       </div>
+
+      ${latest
+        ? buildComparisonCard(latest)
+        : `<div class="card" style="margin-bottom:24px"><div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Bewertung vorhanden.</p></div></div>`
+      }
 
       <div class="card" style="margin-bottom:24px">
         <div class="card-header">

@@ -176,11 +176,9 @@ export function calculatePerformance({ level, managerScores, selfScores, objekti
 
 /**
  * Maps a performance_entries row to calculatePerformance() input.
- * @param {object}  entry      - manager evaluation row from performance_entries
- * @param {string}  level      - 'junior' | 'senior'
- * @param {object}  [selfEntry] - optional self-assessment row (is_self_assessment = true)
+ * self_scores live on the same row as manager_scores (set via RPC submit_self_assessment).
  */
-export function mapEntryToEngine(entry, level, selfEntry = null) {
+export function mapEntryToEngine(entry, level) {
   const ms  = entry.manager_scores ?? {}
   const lvl = (level === 'senior' || level === 'Senior') ? 'Senior' : 'Junior'
 
@@ -196,10 +194,10 @@ export function mapEntryToEngine(entry, level, selfEntry = null) {
     Kreativitaet_Innovation: ms.creativity  ?? entry.creativity   ?? fallback,
   }
 
-  // Map self-assessment scores if a self-assessment entry is provided
+  // self_scores are stored on the same row, written via RPC submit_self_assessment
   let selfScores = null
-  if (selfEntry?.self_scores) {
-    const ss = selfEntry.self_scores
+  if (entry.self_scores) {
+    const ss = entry.self_scores
     selfScores = {
       Sauberkeit_Hygiene:      ss.hygiene     ?? managerScores.Sauberkeit_Hygiene,
       Technische_Exzellenz:    ss.technique   ?? managerScores.Technische_Exzellenz,
@@ -214,8 +212,6 @@ export function mapEntryToEngine(entry, level, selfEntry = null) {
   const nachbesserungen            = entry.complaints_count ?? 0
   const kundenfeedbackDurchschnitt = entry.customer_feedback ?? managerScores.Kundenmanagement
 
-  // terminTreueQuote / arbeitsPuenktlichkeitsQuote not tracked in DB.
-  // Proxy from manager reliability score so the veto remains meaningful.
   const zuvScore   = managerScores.Zuverlaessigkeit
   const proxyQuote = zuvScore >= 5 ? 1.0 : zuvScore >= 4 ? 0.97 : zuvScore >= 3 ? 0.90 : zuvScore >= 2 ? 0.80 : 0.65
 
@@ -230,19 +226,15 @@ export function mapEntryToEngine(entry, level, selfEntry = null) {
 }
 
 /**
- * Computes QPI from the three most recent manager evaluations.
- * @param {object[]} evaluations    - manager-only entries (is_self_assessment = false)
- * @param {string}   level
- * @param {object[]} [selfAssessments] - self-assessment entries to pair with evals
+ * Computes QPI from the three most recent evaluations.
+ * Each evaluation row may contain self_scores alongside manager_scores.
  */
-export function calcQPI(evaluations, level, selfAssessments = []) {
+export function calcQPI(evaluations, level) {
   const sorted = [...evaluations].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   if (sorted.length < 3) return null
 
-  const latestSelf = selfAssessments[0] ?? null
-
   const [e0, e1, e2] = sorted
-  const pi0 = calculatePerformance(mapEntryToEngine(e0, level, latestSelf)).PI_Monat
+  const pi0 = calculatePerformance(mapEntryToEngine(e0, level)).PI_Monat
   const pi1 = calculatePerformance(mapEntryToEngine(e1, level)).PI_Monat
   const pi2 = calculatePerformance(mapEntryToEngine(e2, level)).PI_Monat
 
