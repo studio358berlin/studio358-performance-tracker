@@ -10,8 +10,8 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
   const mgScores   = latestEval?.manager_scores ?? null
   const hasMgrEval = isSelfAssessment && mgScores != null && Object.keys(mgScores).length > 0
 
-  const title     = isSelfAssessment ? 'Selbstbewertung' : 'Bewertung'
-  const saveLabel = isSelfAssessment ? 'Selbstbewertung speichern' : 'Bewertung speichern'
+  const title     = isSelfAssessment ? 'Selbstbewertung' : 'Mitarbeiter bewerten'
+  const saveLabel = isSelfAssessment ? 'Selbstbewertung speichern' : 'Manager-Bewertung speichern'
 
   function renderStars(criterionId, value) {
     return Array.from({ length: 5 }, (_, i) => `
@@ -193,8 +193,9 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         console.warn('[ScoreModal] RPC failed, trying upsert fallback:', error.message)
         const upsertPayload = {
           ...latestEval,
-          self_scores:      scores,
-          self_assessed_at: new Date().toISOString(),
+          self_scores:        scores,
+          self_assessed_at:   new Date().toISOString(),
+          is_self_assessment: true,
         }
         console.log('Sending to DB (upsert fallback):', upsertPayload)
         ;({ data, error } = await supabase
@@ -203,38 +204,56 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         console.log('[ScoreModal] Upsert fallback result:', { data, error })
       }
     } else {
+      // ── Manager evaluation — never touches self_scores or is_self_assessment ─────
       const reworks_count      = Number(overlay.querySelector('#reclamations-count')?.value ?? 0)
       const appointments_count = Number(overlay.querySelector('#appointments-count')?.value ?? 20)
       const feedback           = overlay.querySelector('#customer-feedback')?.value
       const notes              = overlay.querySelector('#eval-notes')?.value?.trim()
 
-      // Derive punctuality_rate from the punctuality star score (proxy, no separate form field)
       const punctScore       = scores.punctuality ?? 3
       const punctuality_rate = punctScore >= 5 ? 1.0 : punctScore >= 4 ? 0.97 : punctScore >= 3 ? 0.90 : punctScore >= 2 ? 0.80 : 0.65
 
-      // First day of the current month, e.g. 2025-05-01
       const now = new Date()
       const evaluation_month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-      const payload = {
-        employee_id:         employee.id,
-        evaluator_id:        evaluatorId,
-        is_self_assessment:  false,
-        manager_scores:      scores,
-        manager_assessed_at: new Date().toISOString(),
-        score,
-        evaluation_month,
-        appointments_count,
-        reworks_count,
-        punctuality_rate,
-        customer_feedback:   feedback ? Number(feedback) : null,
-        notes:               notes || null,
+      // ── Attempt 1: SECURITY DEFINER RPC (only writes manager fields) ─────────
+      const rpcArgs = {
+        p_employee_id:        employee.id,
+        p_manager_scores:     scores,
+        p_score:              score,
+        p_evaluation_month:   evaluation_month,
+        p_appointments_count: appointments_count,
+        p_reworks_count:      reworks_count,
+        p_punctuality_rate:   punctuality_rate,
+        p_customer_feedback:  feedback ? Number(feedback) : null,
+        p_notes:              notes || null,
       }
-      console.log('Sending to DB:', payload)
-      ;({ data, error } = await supabase
-        .from('performance_entries')
-        .upsert(payload, { onConflict: 'employee_id,evaluation_month' }))
-      console.log('[ScoreModal] Upsert result:', { data, error })
+      console.log('Sending to DB (RPC submit_manager_assessment):', rpcArgs)
+      ;({ data, error } = await supabase.rpc('submit_manager_assessment', rpcArgs))
+      console.log('[ScoreModal] Manager RPC result:', { data, error })
+
+      // ── Attempt 2: targeted UPDATE fallback — still no is_self_assessment field ─
+      if (error) {
+        console.warn('[ScoreModal] Manager RPC failed, trying direct UPDATE fallback:', error.message)
+        const updatePayload = {
+          evaluator_id:        evaluatorId,
+          manager_scores:      scores,
+          manager_assessed_at: new Date().toISOString(),
+          score,
+          appointments_count,
+          reworks_count,
+          punctuality_rate,
+          customer_feedback:   feedback ? Number(feedback) : null,
+          notes:               notes || null,
+        }
+        console.log('Sending to DB (manager UPDATE fallback):', updatePayload)
+        ;({ data, error } = await supabase
+          .from('performance_entries')
+          .update(updatePayload)
+          .eq('employee_id', employee.id)
+          .eq('evaluation_month', evaluation_month))
+        console.log('[ScoreModal] Manager UPDATE result:', { data, error })
+      }
     }
 
     if (error) {

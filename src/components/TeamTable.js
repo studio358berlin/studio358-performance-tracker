@@ -17,11 +17,10 @@ function getMonthStatus(employeeId, evals) {
     e.employee_id === employeeId &&
     (e.evaluation_month ?? e.created_at ?? '').slice(0, 7) === ym
   )
-  if (!entry) return 'missing'
-  const hasSelf = entry.self_scores && Object.keys(entry.self_scores).length > 0
-  const hasMgr  = entry.manager_scores && Object.keys(entry.manager_scores).length > 0
-  if (!hasSelf) return 'missing'
-  if (!hasMgr)  return 'waiting'
+  // Employee must have explicitly submitted (is_self_assessment === true)
+  if (!entry || entry.is_self_assessment !== true) return 'missing'
+  const hasMgr = entry.manager_scores && Object.keys(entry.manager_scores).length > 0
+  if (!hasMgr) return 'waiting'
   return 'complete'
 }
 
