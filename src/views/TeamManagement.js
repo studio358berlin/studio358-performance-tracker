@@ -4,6 +4,7 @@ import { TeamTable } from '../components/TeamTable.js'
 import { LineChart } from '../components/LineChart.js'
 import { getAllSkills, DEFAULT_SKILLS, checkPromotionEligibility } from '../lib/skills.js'
 import { formatScore, getTrend, getTrendHTML, getLatestScore, calcQualityRate, calcTotalReclamations } from '../lib/scoring.js'
+import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
 
 export function TeamManagement({ user }) {
   let employees      = []
@@ -165,6 +166,11 @@ export function TeamManagement({ user }) {
     const totalRecs   = calcTotalReclamations(evals)
     const promotion   = checkPromotionEligibility(emp, evals)
 
+    const piResult = evals[0] ? calculatePerformance(mapEntryToEngine(evals[0], emp.level)) : null
+    const qpi      = calcQPI(evals, emp.level)
+
+    const bonusBadgeColor = { Gold: 'var(--gold)', Silber: '#A0A0A0', Bronze: 'var(--terracotta)' }
+
     return `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
         <button class="btn btn-ghost btn-sm" id="back-to-list">← Zurück</button>
@@ -172,13 +178,31 @@ export function TeamManagement({ user }) {
         <span class="badge ${emp.level === 'senior' ? 'badge-aubergine' : 'badge-gold'}">${emp.level}</span>
         <span class="badge badge-neutral">${locationLabel(emp.location)}</span>
         ${promotion.eligible ? `<span class="badge badge-success">⬆ Promotion-Ready</span>` : ''}
+        ${piResult?.vetoAusgeloest ? `<span class="badge" style="background:var(--terracotta);color:#fff">⚠ Safety Veto</span>` : ''}
       </div>
 
-      <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
         <div class="stat-card">
           <div class="stat-label">Score</div>
           <div class="stat-value">${latestScore !== null ? formatScore(latestScore) : '–'}</div>
           <div class="stat-sub">/ 5.0 · ${getTrendHTML(trend)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">PI Monat</div>
+          <div class="stat-value" style="color:var(--aubergine)">${piResult ? piResult.PI_Monat : '–'}</div>
+          <div class="stat-sub">von 100</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">QPI Quartal</div>
+          <div class="stat-value" style="color:var(--aubergine)">${qpi !== null ? qpi : '–'}</div>
+          <div class="stat-sub">${qpi === null ? '< 3 Bewertungen' : 'Ø 3 Monate'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Bonusstufe</div>
+          <div class="stat-value" style="font-size:1.2rem;color:${bonusBadgeColor[piResult?.bonusStufe] ?? 'var(--text-light)'}">
+            ${piResult?.bonusStufe ?? '–'}
+          </div>
+          <div class="stat-sub">aktuell</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Quality Rate</div>
@@ -186,16 +210,6 @@ export function TeamManagement({ user }) {
             ${qualityRate !== null ? qualityRate + '%' : '–'}
           </div>
           <div class="stat-sub">Kundenzufriedenheit</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Reklamationen</div>
-          <div class="stat-value" style="${totalRecs > 0 ? 'color:var(--terracotta)' : ''}">${totalRecs}</div>
-          <div class="stat-sub">Absolut (Manager-Sicht)</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Bewertungen</div>
-          <div class="stat-value">${evals.length}</div>
-          <div class="stat-sub">Gesamt</div>
         </div>
       </div>
 

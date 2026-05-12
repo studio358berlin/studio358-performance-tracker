@@ -148,6 +148,7 @@ export function ScoreModal({ employee, evaluatorId, onSaved, onClose }) {
       employee_id:       employee.id,
       evaluator_id:      evaluatorId,
       score,
+      manager_scores:    scores,
       creativity:        scores.creativity   ?? 0,
       reliability:       scores.punctuality  ?? 0,
       productivity:      scores.revenue      ?? 0,

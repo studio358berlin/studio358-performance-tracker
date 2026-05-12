@@ -6,6 +6,7 @@ import {
   formatScore, getTrend, getTrendHTML, getScoreLabel,
   calcQualityRate, getLowScoringCriteria,
 } from '../lib/scoring.js'
+import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
 
 export function EmployeeView({ user, onNavigate }) {
   let evaluations = []
@@ -164,6 +165,17 @@ export function EmployeeView({ user, onNavigate }) {
     const qualityRate = calcQualityRate(evaluations)
     const level       = user.profile?.level || 'junior'
 
+    const piResult  = latest ? calculatePerformance(mapEntryToEngine(latest, level)) : null
+    const qpi       = calcQPI(evaluations, level)
+    const bonusStufe = piResult?.bonusStufe ?? null
+
+    const bonusBadgeColor = {
+      Gold:       'var(--gold)',
+      Silber:     '#A0A0A0',
+      Bronze:     'var(--terracotta)',
+      'Kein Bonus': 'var(--text-light)',
+    }
+
     return `
       <div class="page-header">
         <h2>Meine Performance</h2>
@@ -180,21 +192,25 @@ export function EmployeeView({ user, onNavigate }) {
           <div class="stat-sub">von 5.0</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Trend</div>
-          <div class="stat-value" style="font-size:1.6rem">${getTrendHTML(trend)}</div>
-          <div class="stat-sub">${trend?.label || 'Noch keine Daten'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Quality Rate</div>
-          <div class="stat-value" style="color:${qualityRate !== null && qualityRate >= 95 ? 'var(--success)' : 'var(--terracotta)'}">
-            ${qualityRate !== null ? qualityRate + '%' : '–'}
+          <div class="stat-label">Performance Index</div>
+          <div class="stat-value" style="color:var(--aubergine)">
+            ${piResult ? piResult.PI_Monat : '–'}
           </div>
-          <div class="stat-sub">Kundenzufriedenheit</div>
+          <div class="stat-sub">von 100 · ${piResult?.vetoAusgeloest ? '⚠ Veto' : 'aktueller Monat'}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Bewertungen</div>
-          <div class="stat-value">${evaluations.length}</div>
-          <div class="stat-sub">Gesamt</div>
+          <div class="stat-label">Quartal QPI</div>
+          <div class="stat-value" style="color:var(--aubergine)">
+            ${qpi !== null ? qpi : '–'}
+          </div>
+          <div class="stat-sub">${qpi === null ? 'mind. 3 Bewertungen nötig' : 'Ø letzte 3 Monate'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Bonusstufe</div>
+          <div class="stat-value" style="font-size:1.4rem;color:${bonusBadgeColor[bonusStufe] ?? 'var(--text-light)'}">
+            ${bonusStufe ?? '–'}
+          </div>
+          <div class="stat-sub">${qpi !== null ? 'QPI ' + qpi : 'QPI noch nicht berechenbar'}</div>
         </div>
       </div>
 
