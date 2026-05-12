@@ -202,7 +202,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         console.log('Sending to DB (upsert fallback):', upsertPayload)
         ;({ data, error } = await supabase
           .from('performance_entries')
-          .upsert(upsertPayload, { onConflict: 'employee_id,created_at' }))
+          .upsert(upsertPayload, { onConflict: 'employee_id' }))
         console.log('[ScoreModal] Upsert fallback result:', { data, error })
       }
     } else {
@@ -231,7 +231,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
       console.log('Sending to DB:', payload)
       ;({ data, error } = await supabase
         .from('performance_entries')
-        .upsert(payload, { onConflict: 'employee_id,created_at' }))
+        .upsert(payload, { onConflict: 'employee_id' }))
       console.log('[ScoreModal] Upsert result:', { data, error })
     }
 

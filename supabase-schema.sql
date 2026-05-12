@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS performance_entries (
   notes                TEXT,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  UNIQUE (employee_id, created_at)
+  UNIQUE (employee_id)
 );
 
 -- SOPS (Standard Operating Procedures / Wissensdatenbank)
