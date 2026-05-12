@@ -160,7 +160,9 @@ export function TeamManagement({ user }) {
   }
 
   function buildDetailView(emp) {
-    const evals       = getEvals(emp.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    const allEvals    = getEvals(emp.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    // Only manager-scored entries count for PI, QPI, chart, history stats
+    const evals       = allEvals.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
     const latestScore = getLatestScore(evals)
     const trend       = getTrend(evals)
     const qualityRate = calcQualityRate(evals)
@@ -224,7 +226,7 @@ export function TeamManagement({ user }) {
         </div>
       ` : ''}
 
-      ${evals[0] ? buildComparisonCard(evals[0], emp.level, {
+      ${allEvals[0] ? buildComparisonCard(allEvals[0], emp.level, {
           selfLabel:    'Selbsteinschätzung (Mitarbeiter)',
           managerLabel: 'Meine Bewertung (Management)',
         }) : ''}
@@ -379,6 +381,7 @@ export function TeamManagement({ user }) {
     setTimeout(() => {
       if (selectedEmployee) {
         const evals  = getEvals(selectedEmployee.id)
+          .filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
         const level  = selectedEmployee.level || 'junior'
         const sorted = [...evals].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
         const labels = sorted.map(e => e.evaluation_month

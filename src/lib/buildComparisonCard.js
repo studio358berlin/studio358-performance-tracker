@@ -49,8 +49,9 @@ export function buildComparisonCard(evaluation, level, {
   const mgScores   = evaluation.manager_scores ?? {}
   const selfScores = evaluation.self_scores    ?? null
 
-  const piResult  = calculatePerformance(mapEntryToEngine(evaluation, level))
-  const managerTs = fmtTs(evaluation.manager_assessed_at ?? evaluation.created_at)
+  const hasMgrScores = mgScores && Object.keys(mgScores).length > 0
+  const piResult     = hasMgrScores ? calculatePerformance(mapEntryToEngine(evaluation, level)) : null
+  const managerTs    = fmtTs(evaluation.manager_assessed_at)
   const selfTs    = fmtTs(evaluation.self_assessed_at)
 
   const monthLabel = evaluation.evaluation_month
@@ -90,7 +91,7 @@ export function buildComparisonCard(evaluation, level, {
             ${managerLabel}
           </div>
           <div style="font-size:0.7rem;color:var(--text-light);margin-top:3px">
-            ${managerTs ? `Erstellt am ${managerTs}` : '–'}
+            ${managerTs ? `Erstellt am ${managerTs}` : '<em>Noch nicht bewertet</em>'}
           </div>
         </div>
       </div>

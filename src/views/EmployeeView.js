@@ -11,7 +11,8 @@ import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 import { ScoreModal } from '../components/ScoreModal.js'
 
 export function EmployeeView({ user, onNavigate }) {
-  let evaluations = []
+  let evaluations = []   // entries with manager scores (for chart, PI, history)
+  let latestEntry = null // most recent entry of any kind (for comparison card)
   let sops = []
   let selectedSOPId = null
   let container = null
@@ -21,8 +22,9 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
     ])
-    // Only keep manager evaluations; old is_self_assessment=true rows are excluded
-    evaluations = (evalRes.data ?? []).filter(e => !e.is_self_assessment)
+    const all   = evalRes.data ?? []
+    evaluations = all.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
+    latestEntry = all[0] ?? null
     sops        = sopRes.data ?? []
   }
 
@@ -38,7 +40,7 @@ export function EmployeeView({ user, onNavigate }) {
       employee,
       evaluatorId:      user.id,
       isSelfAssessment: true,
-      latestEval:       getLatest(),
+      latestEval:       latestEntry,
       onSaved: async () => {
         await loadData()
         rerender()
@@ -169,8 +171,8 @@ export function EmployeeView({ user, onNavigate }) {
       'Kein Bonus': 'var(--text-light)',
     }
 
-    const selfDate = latest?.self_assessed_at
-      ? new Date(latest.self_assessed_at).toLocaleDateString('de-DE')
+    const selfDate = latestEntry?.self_assessed_at
+      ? new Date(latestEntry.self_assessed_at).toLocaleDateString('de-DE')
       : null
 
     return `
@@ -224,8 +226,8 @@ export function EmployeeView({ user, onNavigate }) {
         <div class="chart-container"><canvas id="employee-chart"></canvas></div>
       </div>
 
-      ${latest
-        ? buildComparisonCard(latest, level)
+      ${latestEntry
+        ? buildComparisonCard(latestEntry, level)
         : `<div class="card" style="margin-bottom:24px"><div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Bewertung vorhanden.</p></div></div>`
       }
 

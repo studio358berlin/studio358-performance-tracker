@@ -9,7 +9,6 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
 
   const mgScores   = latestEval?.manager_scores ?? null
   const hasMgrEval = isSelfAssessment && mgScores != null && Object.keys(mgScores).length > 0
-  const noMgrEval  = isSelfAssessment && !hasMgrEval
 
   const title     = isSelfAssessment ? 'Selbstbewertung' : 'Bewertung'
   const saveLabel = isSelfAssessment ? 'Selbstbewertung speichern' : 'Bewertung speichern'
@@ -40,9 +39,9 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         </div>
 
         <div class="criteria-list" id="criteria-container">
-          ${noMgrEval ? `
-            <div style="padding:12px 16px;background:rgba(181,87,58,0.1);border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.85rem;color:var(--terracotta);border-left:3px solid var(--terracotta)">
-              ⚠ Noch keine Bewertung durch das Management vorhanden – Selbstbewertung erst möglich, wenn dein Manager eine Bewertung erstellt hat.
+          ${isSelfAssessment && !hasMgrEval ? `
+            <div style="padding:10px 14px;background:rgba(74,144,184,0.08);border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.8rem;color:#4A90B8;border-left:3px solid #4A90B8">
+              Du bewertest als Erster – danach kann der Manager seine Einschätzung ergänzen.
             </div>
           ` : ''}
           ${hasMgrEval ? `
@@ -126,7 +125,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
           </div>
           <div style="display:flex;gap:10px">
             <button class="btn btn-ghost" id="cancel-btn">Abbrechen</button>
-            <button class="btn btn-primary" id="save-btn" ${noMgrEval ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>${saveLabel}</button>
+            <button class="btn btn-primary" id="save-btn">${saveLabel}</button>
           </div>
         </div>
       </div>
@@ -166,8 +165,6 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
   async function save(overlay) {
     const saveBtn = overlay.querySelector('#save-btn')
     const errorEl = overlay.querySelector('#modal-error')
-
-    if (noMgrEval) return
 
     const allScored = criteria.every(c => scores[c.id] > 0)
     if (!allScored) {
