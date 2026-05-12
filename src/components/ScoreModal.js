@@ -2,10 +2,14 @@ import { supabase } from '../lib/supabase.js'
 import { getCriteriaForLevel } from '../lib/criteria.js'
 import { calcWeightedScore } from '../lib/scoring.js'
 
-export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, onSaved, onClose }) {
-  const criteria = getCriteriaForLevel(employee.level || 'junior')
-  const scores = {}
+export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, latestEval = null, onSaved, onClose }) {
+  const criteria  = getCriteriaForLevel(employee.level || 'junior')
+  const scores    = {}
   criteria.forEach(c => { scores[c.id] = 0 })
+
+  const mgScores   = latestEval?.manager_scores ?? null
+  const hasMgrEval = isSelfAssessment && mgScores != null && Object.keys(mgScores).length > 0
+  const noMgrEval  = isSelfAssessment && !hasMgrEval
 
   const title     = isSelfAssessment ? 'Selbstbewertung' : 'Bewertung'
   const saveLabel = isSelfAssessment ? 'Selbstbewertung speichern' : 'Bewertung speichern'
@@ -36,18 +40,44 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, on
         </div>
 
         <div class="criteria-list" id="criteria-container">
-          ${criteria.map(c => `
-            <div class="criterion-item">
-              <div class="criterion-header">
-                <span class="criterion-name">${c.label}</span>
-                <span class="criterion-weight">${Math.round(c.weight * 100)}%</span>
-              </div>
-              <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:6px">${c.description}</p>
-              <div class="star-rating" data-criterion="${c.id}">
-                ${renderStars(c.id, 0)}
-              </div>
+          ${noMgrEval ? `
+            <div style="padding:12px 16px;background:rgba(181,87,58,0.1);border-radius:var(--radius-sm);margin-bottom:16px;font-size:0.85rem;color:var(--terracotta);border-left:3px solid var(--terracotta)">
+              ⚠ Noch keine Bewertung durch das Management vorhanden – Selbstbewertung erst möglich, wenn dein Manager eine Bewertung erstellt hat.
             </div>
-          `).join('')}
+          ` : ''}
+          ${hasMgrEval ? `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--cream-dark)">
+              <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#4A90B8">Meine Einschätzung</div>
+              <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--aubergine)">Bewertung Management</div>
+            </div>
+          ` : ''}
+          ${criteria.map(c => {
+            const mgVal = hasMgrEval ? (mgScores[c.id] ?? null) : null
+            return `
+              <div class="criterion-item">
+                <div class="criterion-header">
+                  <span class="criterion-name">${c.label}</span>
+                  <span class="criterion-weight">${Math.round(c.weight * 100)}%</span>
+                </div>
+                <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:6px">${c.description}</p>
+                <div style="${hasMgrEval ? 'display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:center' : ''}">
+                  <div class="star-rating" data-criterion="${c.id}">
+                    ${renderStars(c.id, 0)}
+                  </div>
+                  ${hasMgrEval ? `
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <div style="flex:1;height:7px;background:rgba(61,43,53,0.1);border-radius:4px;overflow:hidden">
+                        <div style="width:${mgVal != null ? (mgVal / 5) * 100 : 0}%;height:100%;background:var(--aubergine);border-radius:4px"></div>
+                      </div>
+                      <span style="font-size:0.75rem;font-weight:600;color:var(--aubergine);min-width:28px;text-align:right">
+                        ${mgVal != null ? mgVal + '/5' : '–'}
+                      </span>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            `
+          }).join('')}
         </div>
 
         ${!isSelfAssessment ? `
@@ -96,7 +126,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, on
           </div>
           <div style="display:flex;gap:10px">
             <button class="btn btn-ghost" id="cancel-btn">Abbrechen</button>
-            <button class="btn btn-primary" id="save-btn">${saveLabel}</button>
+            <button class="btn btn-primary" id="save-btn" ${noMgrEval ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>${saveLabel}</button>
           </div>
         </div>
       </div>
@@ -136,6 +166,8 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, on
   async function save(overlay) {
     const saveBtn = overlay.querySelector('#save-btn')
     const errorEl = overlay.querySelector('#modal-error')
+
+    if (noMgrEval) return
 
     const allScored = criteria.every(c => scores[c.id] > 0)
     if (!allScored) {

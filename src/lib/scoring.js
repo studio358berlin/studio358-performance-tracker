@@ -112,9 +112,10 @@ export function getLowScoringCriteria(evaluations, threshold = 3) {
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   )[0]
 
-  if (!latest?.scores) return []
+  const scores = latest?.manager_scores ?? latest?.scores
+  if (!scores) return []
 
-  return Object.entries(latest.scores)
+  return Object.entries(scores)
     .filter(([, val]) => val < threshold)
     .map(([id]) => id)
 }

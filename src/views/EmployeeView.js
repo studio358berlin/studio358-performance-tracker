@@ -37,6 +37,7 @@ export function EmployeeView({ user, onNavigate }) {
       employee,
       evaluatorId:      user.id,
       isSelfAssessment: true,
+      latestEval:       getLatest(),
       onSaved: async () => {
         await loadData()
         rerender()
