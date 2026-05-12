@@ -221,7 +221,6 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         p_employee_id:        employee.id,
         p_manager_scores:     scores,
         p_score:              score,
-        p_evaluation_month:   evaluation_month,
         p_appointments_count: appointments_count,
         p_reworks_count:      reworks_count,
         p_punctuality_rate:   punctuality_rate,
