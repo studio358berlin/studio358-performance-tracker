@@ -10,6 +10,7 @@ import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 export function TeamManagement({ user }) {
   let employees      = []
   let evaluations    = []
+  let employeeHours  = []   // employee_daily_hours rows for current month
   let activeLocation = 'all'
   let view           = 'list'
   let selectedEmployee = null
@@ -17,15 +18,20 @@ export function TeamManagement({ user }) {
   let container      = null
 
   async function loadData() {
-    const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+    const firstOfMonth    = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+    const firstOfMonthStr = firstOfMonth.slice(0, 10)
 
-    const [empRes, evalRes, logsRes] = await Promise.all([
+    const [empRes, evalRes, logsRes, hoursRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
+      supabase.from('employee_daily_hours')
+        .select('employee_id, work_date, work_hours, break_minutes')
+        .gte('work_date', firstOfMonthStr),
     ])
     employees   = empRes.data  ?? []
     evaluations = evalRes.data ?? []
+    employeeHours = hoursRes.data ?? []
 
     // Aggregate monthly tips per employee from logs
     const tipsMap = {}
@@ -367,6 +373,59 @@ export function TeamManagement({ user }) {
     `
   }
 
+  function buildHoursTable() {
+    const today     = new Date().toISOString().slice(0, 10)
+    const weekStart = (() => {
+      const d = new Date(); const day = d.getDay() || 7
+      d.setDate(d.getDate() - day + 1); return d.toISOString().slice(0, 10)
+    })()
+
+    const rows = employees.map(emp => {
+      const empH = employeeHours.filter(h => h.employee_id === emp.id)
+      const netMins = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.work_hours * 60 - h.break_minutes), 0)
+      return {
+        emp,
+        todayMins: netMins(h => h.work_date === today),
+        weekMins:  netMins(h => h.work_date >= weekStart),
+        monthMins: netMins(() => true),
+      }
+    })
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h4>Arbeitszeiten-Konto (Übersicht)</h4>
+          <span style="font-size:0.78rem;color:var(--text-light)">Netto-Stunden (ohne Pausen)</span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Mitarbeiter</th>
+                <th>Heute</th>
+                <th>Diese Woche</th>
+                <th>Diesen Monat</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(({ emp, todayMins, weekMins, monthMins }) => `
+                <tr>
+                  <td>
+                    <div style="font-weight:500">${emp.full_name}</div>
+                    <div style="font-size:0.72rem;color:var(--text-light)">${locationLabel(emp.location)}</div>
+                  </td>
+                  <td style="font-weight:600;color:var(--aubergine)">${fmtHours(todayMins)}</td>
+                  <td>${fmtHours(weekMins)}</td>
+                  <td style="font-weight:600;color:var(--aubergine)">${fmtHours(monthMins)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
+  }
+
   function buildListHTML() {
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -384,6 +443,8 @@ export function TeamManagement({ user }) {
         <button class="location-tab ${activeLocation === 'mitte'  ? 'active' : ''}" data-loc="mitte">Mitte</button>
         <button class="location-tab ${activeLocation === 'kadewe' ? 'active' : ''}" data-loc="kadewe">KaDeWe</button>
       </div>
+
+      ${buildHoursTable()}
 
       <div class="card">
         <div id="team-table-area"></div>
@@ -519,6 +580,13 @@ export function TeamManagement({ user }) {
 
 function locationLabel(loc) {
   return { mitte: 'Mitte', kadewe: 'KaDeWe' }[loc] ?? loc ?? '–'
+}
+
+function fmtHours(mins) {
+  if (!mins) return '<span style="color:var(--text-light)">–</span>'
+  const h = Math.floor(mins / 60)
+  const m = Math.round(mins % 60)
+  return m > 0 ? `${h}:${String(m).padStart(2, '0')} Std.` : `${h} Std.`
 }
 
 function showToast(message, type = 'success') {

@@ -9,6 +9,8 @@ export function DailyCheckout({ user, onNavigate }) {
   let todayLogs          = []
   let selectedLocationId = user?.profile?.location_id ?? null
   let container          = null
+  let hoursToday         = null   // employee's own hours entry for today
+  let teamHoursMap       = {}     // manager: employee_id → hours entry
 
   // ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -36,6 +38,19 @@ export function DailyCheckout({ user, onNavigate }) {
         const slug = user?.profile?.location
         selectedLocationId = locations.find(l => l.slug === slug)?.id ?? locations[0]?.id ?? null
       }
+    }
+
+    // Load today's working-hours entries
+    const todayDate = new Date().toISOString().slice(0, 10)
+    if (isManager) {
+      const { data: hData } = await supabase
+        .from('employee_daily_hours').select('*').eq('work_date', todayDate)
+      teamHoursMap = Object.fromEntries((hData ?? []).map(h => [h.employee_id, h]))
+    } else {
+      const { data: hData } = await supabase
+        .from('employee_daily_hours').select('*')
+        .eq('employee_id', user.id).eq('work_date', todayDate).maybeSingle()
+      hoursToday = hData ?? null
     }
   }
 
@@ -166,6 +181,152 @@ export function DailyCheckout({ user, onNavigate }) {
   async function refreshLogs() {
     todayLogs = await fetchTodayLogs()
     rerender()
+  }
+
+  async function saveHours(hours, breakMins) {
+    const today = new Date().toISOString().slice(0, 10)
+    const { data, error } = await supabase
+      .from('employee_daily_hours')
+      .upsert({
+        employee_id:   user.id,
+        location_id:   selectedLocationId,
+        work_date:     today,
+        work_hours:    hours,
+        break_minutes: breakMins,
+        created_by:    user.id,
+        updated_at:    new Date().toISOString(),
+      }, { onConflict: 'employee_id,work_date' })
+      .select().single()
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return false }
+    hoursToday = data
+    showToast('Arbeitszeit gespeichert.')
+    rerender()
+    return true
+  }
+
+  function openHoursModal() {
+    const overlay = document.createElement('div')
+    overlay.style.position        = 'fixed'
+    overlay.style.top             = '0'
+    overlay.style.left            = '0'
+    overlay.style.width           = '100vw'
+    overlay.style.height          = '100vh'
+    overlay.style.zIndex          = '9999'
+    overlay.style.display         = 'flex'
+    overlay.style.alignItems      = 'center'
+    overlay.style.justifyContent  = 'center'
+    overlay.style.background      = 'rgba(0,0,0,0.55)'
+    overlay.style.padding         = '16px'
+    overlay.style.boxSizing       = 'border-box'
+
+    const curHours = hoursToday?.work_hours ?? 8
+    const curBreak = hoursToday?.break_minutes ?? 30
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Arbeitszeit erfassen</h3>
+          <button id="wh-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Arbeitszeit (Stunden)
+            <input id="wh-hours" type="number" min="0.5" max="24" step="0.5" value="${curHours}"
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1.1rem;font-weight:600;text-align:center">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Pause (Minuten)
+            <input id="wh-break" type="number" min="0" max="180" step="5" value="${curBreak}"
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1.1rem;font-weight:600;text-align:center">
+          </label>
+          <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;font-size:0.85rem;color:var(--text-mid)">
+            Netto-Arbeitszeit: <strong id="wh-net" style="color:var(--aubergine)">– Std.</strong>
+          </div>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="wh-save" class="btn btn-accent" style="width:100%;justify-content:center">Speichern</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const hoursInput = overlay.querySelector('#wh-hours')
+    const breakInput = overlay.querySelector('#wh-break')
+    const netDisplay = overlay.querySelector('#wh-net')
+
+    function updateNet() {
+      const h   = Math.max(0, parseFloat(hoursInput.value) || 0)
+      const b   = Math.max(0, parseFloat(breakInput.value) || 0)
+      netDisplay.textContent = Math.max(0, h - b / 60).toFixed(1) + ' Std.'
+    }
+    updateNet()
+    hoursInput.addEventListener('input', updateNet)
+    breakInput.addEventListener('input', updateNet)
+
+    overlay.querySelector('#wh-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#wh-save').addEventListener('click', async () => {
+      const h = Math.max(0.5, parseFloat(hoursInput.value) || 8)
+      const b = Math.max(0, parseInt(breakInput.value) || 0)
+      const saveBtn = overlay.querySelector('#wh-save')
+      saveBtn.disabled = true; saveBtn.textContent = 'Speichern...'
+      const ok = await saveHours(h, b)
+      if (ok) overlay.remove()
+      else { saveBtn.disabled = false; saveBtn.textContent = 'Speichern' }
+    })
+  }
+
+  function buildMyHoursCard() {
+    if (isManager) return ''
+    const treatMins = todayLogs
+      .filter(l => !l.is_cancelled && !l.is_no_show)
+      .reduce((s, l) => s + Number(l.treatment?.duration ?? treatments.find(t => t.id === l.treatment_id)?.duration ?? 60), 0)
+
+    let utilStr = '–'
+    if (hoursToday) {
+      const netMins = Math.max(1, hoursToday.work_hours * 60 - hoursToday.break_minutes)
+      const util    = Math.round((treatMins / netMins) * 100)
+      const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+      utilStr = `<span style="color:${uCol};font-weight:700">${util}%</span>`
+    }
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h4>Meine Arbeitszeit heute</h4>
+          <button class="btn ${hoursToday ? 'btn-ghost' : 'btn-accent'} btn-sm" id="btn-log-hours">
+            ${hoursToday ? '✏ Bearbeiten' : '+ Jetzt erfassen'}
+          </button>
+        </div>
+        ${hoursToday ? `
+          <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
+            <div>
+              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Arbeitszeit</div>
+              <div style="font-weight:700;color:var(--aubergine)">${hoursToday.work_hours} Std.</div>
+            </div>
+            <div>
+              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Pause</div>
+              <div style="font-weight:600;color:var(--text-mid)">${hoursToday.break_minutes} Min.</div>
+            </div>
+            <div>
+              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Netto</div>
+              <div style="font-weight:700;color:var(--aubergine)">${Math.max(0, hoursToday.work_hours - hoursToday.break_minutes / 60).toFixed(1)} Std.</div>
+            </div>
+            <div>
+              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Auslastung</div>
+              <div>${utilStr}</div>
+            </div>
+          </div>
+        ` : `
+          <div class="empty-state" style="padding:24px 20px">
+            <span class="empty-state-icon">◉</span>
+            <p>Arbeitszeit noch nicht erfasst.</p>
+          </div>
+        `}
+      </div>
+    `
   }
 
   // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -429,9 +590,13 @@ export function DailyCheckout({ user, onNavigate }) {
     if (!Object.keys(byEmp).length) return ''
 
     const cards = Object.entries(byEmp).map(([empId, d]) => {
-      const split = Object.entries(d.counts).map(([n, c]) => `${c}× ${n}`).join(' · ') || '–'
-      const util  = d.minutes > 0 ? Math.round((d.minutes / (8 * 60)) * 100) : 0
-      const uCol  = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+      const dbH       = teamHoursMap[empId]
+      const initHours = Number(dbH?.work_hours ?? 8)
+      const initBreak = Number(dbH?.break_minutes ?? 0)
+      const netMins   = Math.max(1, initHours * 60 - initBreak)
+      const split     = Object.entries(d.counts).map(([n, c]) => `${c}× ${n}`).join(' · ') || '–'
+      const util      = d.minutes > 0 ? Math.round((d.minutes / netMins) * 100) : 0
+      const uCol      = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
       return `
         <div style="background:var(--cream);border-radius:var(--radius-md);padding:12px 14px;display:flex;flex-direction:column;gap:5px">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
@@ -442,11 +607,15 @@ export function DailyCheckout({ user, onNavigate }) {
             </div>
           </div>
           <div style="font-size:0.75rem;color:var(--text-mid)">${split}</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
-            <span style="font-size:0.75rem;color:var(--text-mid)">Stunden:</span>
-            <input type="number" min="1" max="24" step="0.5" value="8"
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap">
+            <span style="font-size:0.75rem;color:var(--text-mid)">Std.:</span>
+            <input type="number" min="1" max="24" step="0.5" value="${initHours}"
               class="hours-input" data-emp="${empId}" data-minutes="${d.minutes}"
-              style="width:54px;padding:3px 6px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;text-align:center">
+              style="width:50px;padding:3px 6px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;text-align:center">
+            <span style="font-size:0.75rem;color:var(--text-mid)">Pause:</span>
+            <input type="number" min="0" max="180" step="5" value="${initBreak}"
+              class="break-input" data-emp="${empId}"
+              style="width:50px;padding:3px 6px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;text-align:center">
             <span class="util-display" data-emp="${empId}" style="font-size:0.82rem;font-weight:700;color:${uCol}">
               Auslastung: ${util}%
             </span>
@@ -530,6 +699,8 @@ export function DailyCheckout({ user, onNavigate }) {
 
       ${buildTeamStatus()}
 
+      ${buildMyHoursCard()}
+
       <div class="card">
         <div class="card-header"><h4>Heutige Einträge</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
         ${todayLogs.length ? `
@@ -596,6 +767,7 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
+    container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursModal())
 
     container.querySelectorAll('.btn-edit-log[data-id]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -611,17 +783,25 @@ export function DailyCheckout({ user, onNavigate }) {
       btn.addEventListener('click', () => cancelLog(btn.dataset.id))
     })
 
-    // Live utilization recalculation when hours input changes
+    // Live utilization recalculation — net formula: (treat_mins / (hours*60 - break_mins)) * 100
+    function recalcUtil(empId) {
+      const hoursInput = container.querySelector(`.hours-input[data-emp="${empId}"]`)
+      const breakInput = container.querySelector(`.break-input[data-emp="${empId}"]`)
+      const display    = container.querySelector(`.util-display[data-emp="${empId}"]`)
+      if (!hoursInput || !display) return
+      const minutes  = Number(hoursInput.dataset.minutes)
+      const hours    = Math.max(0.5, parseFloat(hoursInput.value) || 8)
+      const breakMins = Math.max(0, parseFloat(breakInput?.value) || 0)
+      const netMins  = Math.max(1, hours * 60 - breakMins)
+      const util     = Math.round((minutes / netMins) * 100)
+      display.textContent = `Auslastung: ${util}%`
+      display.style.color = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+    }
     container.querySelectorAll('.hours-input[data-emp]').forEach(input => {
-      input.addEventListener('input', () => {
-        const minutes = Number(input.dataset.minutes)
-        const hours   = Math.max(0.5, parseFloat(input.value) || 8)
-        const util    = Math.round((minutes / (hours * 60)) * 100)
-        const display = container.querySelector(`.util-display[data-emp="${input.dataset.emp}"]`)
-        if (!display) return
-        display.textContent = `Auslastung: ${util}%`
-        display.style.color = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
-      })
+      input.addEventListener('input', () => recalcUtil(input.dataset.emp))
+    })
+    container.querySelectorAll('.break-input[data-emp]').forEach(input => {
+      input.addEventListener('input', () => recalcUtil(input.dataset.emp))
     })
   }
 

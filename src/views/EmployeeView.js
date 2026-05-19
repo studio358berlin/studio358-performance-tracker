@@ -15,19 +15,26 @@ export function EmployeeView({ user, onNavigate }) {
   let allEntries  = []   // every row for this employee (for chart fallback + comparison card)
   let latestEntry = null // most recent entry of any kind
   let sops = []
+  let hoursData = []     // employee_daily_hours rows for current month
   let selectedSOPId = null
   let container = null
 
   async function loadData() {
-    const [evalRes, sopRes] = await Promise.all([
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+    const [evalRes, sopRes, hoursRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
+      supabase.from('employee_daily_hours')
+        .select('work_date, work_hours, break_minutes')
+        .eq('employee_id', user.id)
+        .gte('work_date', monthStart),
     ])
     const all   = evalRes.data ?? []
     allEntries  = all
     evaluations = all.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
     latestEntry = all[0] ?? null
     sops        = sopRes.data ?? []
+    hoursData   = hoursRes.data ?? []
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -175,6 +182,17 @@ export function EmployeeView({ user, onNavigate }) {
       ? new Date(latestEntry.self_assessed_at).toLocaleDateString('de-DE')
       : null
 
+    // Working-hours stats
+    const weekStart = (() => {
+      const d = new Date(); const day = d.getDay() || 7
+      d.setDate(d.getDate() - day + 1); return d.toISOString().slice(0, 10)
+    })()
+    const netMinsWeek  = hoursData
+      .filter(h => h.work_date >= weekStart)
+      .reduce((s, h) => s + Math.max(0, h.work_hours * 60 - h.break_minutes), 0)
+    const netMinsMonth = hoursData
+      .reduce((s, h) => s + Math.max(0, h.work_hours * 60 - h.break_minutes), 0)
+
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
@@ -228,6 +246,20 @@ export function EmployeeView({ user, onNavigate }) {
             ${bonusStufe ?? '–'}
           </div>
           <div class="stat-sub">${qpi !== null ? 'QPI ' + qpi : 'QPI noch nicht berechenbar'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Woche (Netto)</div>
+          <div class="stat-value" style="font-size:1.3rem;color:var(--aubergine)">
+            ${netMinsWeek > 0 ? (netMinsWeek / 60).toFixed(1) : '–'}
+          </div>
+          <div class="stat-sub">${netMinsWeek > 0 ? 'Std. ab Mo.' : 'Noch keine Zeiterfassung'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Monat (Netto)</div>
+          <div class="stat-value" style="font-size:1.3rem;color:var(--aubergine)">
+            ${netMinsMonth > 0 ? (netMinsMonth / 60).toFixed(1) : '–'}
+          </div>
+          <div class="stat-sub">${netMinsMonth > 0 ? 'Std. gesamt' : 'Noch keine Zeiterfassung'}</div>
         </div>
       </div>
 

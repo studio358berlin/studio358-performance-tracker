@@ -232,6 +232,49 @@ CREATE POLICY "revenue_logs_manager_write" ON daily_revenue_logs
     )
   );
 
+-- ── 10. EMPLOYEE_DAILY_HOURS ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS employee_daily_hours (
+  id            UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id   UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  location_id   UUID        REFERENCES locations(id) ON DELETE SET NULL,
+  work_date     DATE        NOT NULL DEFAULT CURRENT_DATE,
+  work_hours    NUMERIC     NOT NULL DEFAULT 0 CHECK (work_hours >= 0),
+  break_minutes INTEGER     NOT NULL DEFAULT 0 CHECK (break_minutes >= 0),
+  created_by    UUID        NOT NULL REFERENCES auth.users(id),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (employee_id, work_date)
+);
+
+ALTER TABLE employee_daily_hours ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "hours_employee_own" ON employee_daily_hours;
+CREATE POLICY "hours_employee_own" ON employee_daily_hours
+  FOR ALL USING (employee_id = auth.uid());
+
+DROP POLICY IF EXISTS "hours_manager_all" ON employee_daily_hours;
+CREATE POLICY "hours_manager_all" ON employee_daily_hours
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_manager = TRUE)
+  );
+
+-- ── 11. VIEW: employee_hours_analytics ────────────────────────
+CREATE OR REPLACE VIEW employee_hours_analytics AS
+SELECT
+  p.id AS employee_id,
+  p.full_name,
+  COALESCE(ROUND(SUM(CASE WHEN edh.work_date = CURRENT_DATE
+    THEN GREATEST(edh.work_hours - edh.break_minutes / 60.0, 0) END)::numeric, 2), 0) AS net_hours_today,
+  COALESCE(ROUND(SUM(CASE WHEN edh.work_date >= date_trunc('week', CURRENT_DATE)::date
+    THEN GREATEST(edh.work_hours - edh.break_minutes / 60.0, 0) END)::numeric, 2), 0) AS net_hours_week,
+  COALESCE(ROUND(SUM(CASE WHEN edh.work_date >= date_trunc('month', CURRENT_DATE)::date
+    THEN GREATEST(edh.work_hours - edh.break_minutes / 60.0, 0) END)::numeric, 2), 0) AS net_hours_month
+FROM profiles p
+LEFT JOIN employee_daily_hours edh ON edh.employee_id = p.id
+GROUP BY p.id, p.full_name;
+
+GRANT SELECT ON employee_hours_analytics TO authenticated;
+
 -- DAILY_TARGETS: all authenticated read, manager write
 DROP POLICY IF EXISTS "daily_targets_read" ON daily_targets;
 CREATE POLICY "daily_targets_read" ON daily_targets
