@@ -187,25 +187,45 @@ export function DailyCheckout({ user, onNavigate }) {
 
   async function saveHours(hours, breakMins) {
     const today      = localDate()
-    // Prefer the UUID stored directly on the profile; fall back to what was resolved from the slug
     const locationId = user?.profile?.location_id ?? selectedLocationId ?? null
-    const { data, error } = await supabase
-      .from('employee_daily_hours')
-      .upsert({
-        employee_id:   user.id,
-        location_id:   locationId,
-        work_date:     today,
-        work_hours:    parseFloat(String(hours)) || 0,
-        break_minutes: Math.max(0, parseInt(String(breakMins), 10) || 0),
-        created_by:    user.id,
-        updated_at:    new Date().toISOString(),
-      }, { onConflict: 'employee_id,work_date' })
-      .select().single()
+    const base = {
+      employee_id:   user.id,
+      work_date:     today,
+      work_hours:    parseFloat(String(hours)) || 0,
+      break_minutes: Math.max(0, parseInt(String(breakMins), 10) || 0),
+      created_by:    user.id,
+      updated_at:    new Date().toISOString(),
+    }
+
+    let data, error
+    try {
+      // Primary attempt: with location_id
+      const r1 = await supabase
+        .from('employee_daily_hours')
+        .upsert({ ...base, location_id: locationId }, { onConflict: 'employee_id,work_date' })
+        .select().single()
+      data  = r1.data
+      error = r1.error
+
+      // Automatic fallback: if location_id caused a DB error, retry without it
+      if (error) {
+        const r2 = await supabase
+          .from('employee_daily_hours')
+          .upsert(base, { onConflict: 'employee_id,work_date' })
+          .select().single()
+        data  = r2.data
+        error = r2.error
+      }
+    } catch (err) {
+      showToast('Fehler: ' + (err?.message || 'Unbekannter Fehler'), 'error')
+      return false
+    }
+
     if (error) { showToast('Fehler: ' + error.message, 'error'); return false }
-    hoursToday = data
+    hoursToday = data       // triggers green banner + utilization update via rerender()
     showToast('Arbeitszeit gespeichert.')
     rerender()
-    return true
+    return true             // caller closes the modal
   }
 
   function openHoursModal() {
