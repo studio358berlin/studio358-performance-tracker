@@ -14,6 +14,12 @@ export function RevenueAnalytics({ user }) {
   let period = 'today'   // 'today' | 'week' | 'month'
   let container = null
 
+  // Performance matrix state
+  const _now   = new Date()
+  let perfYear  = _now.getFullYear()
+  let perfMonth = _now.getMonth() + 1
+  let perfData  = []   // rows from get_employee_performance RPC
+
   // ── Date helpers ──────────────────────────────────────────────────────────
 
   function dateRange() {
@@ -33,16 +39,16 @@ export function RevenueAnalytics({ user }) {
   async function loadData() {
     const [locRes, profRes, treatRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
-      supabase.from('profiles').select('id, full_name').eq('is_manager', false),
+      supabase.from('profiles').select('id, full_name, location_id').eq('is_manager', false),
       supabase.from('treatments').select('id, name').order('name'),
     ])
     locations  = locRes.data  ?? []
     profiles   = profRes.data ?? []
     treatments = treatRes.data ?? []
 
-    if (!selectedLocationId && locations.length) selectedLocationId = locations[0].id
-    await loadLogs()
-    await loadTarget()
+    // null → 'all' for managers without an assigned location
+    if (!selectedLocationId) selectedLocationId = 'all'
+    await Promise.all([loadLogs(), loadTarget(), loadPerfData()])
   }
 
   async function loadLogs() {
@@ -53,14 +59,25 @@ export function RevenueAnalytics({ user }) {
       .gte('created_at', from)
       .lte('created_at', to)
 
-    if (selectedLocationId) q = q.eq('location_id', selectedLocationId)
+    if (selectedLocationId && selectedLocationId !== 'all') {
+      q = q.eq('location_id', selectedLocationId)
+    }
 
     const { data } = await q
     logs = data ?? []
   }
 
+  async function loadPerfData() {
+    const { data, error } = await supabase.rpc('get_employee_performance', {
+      target_year:  perfYear,
+      target_month: perfMonth,
+    })
+    if (error) console.error('[RevenueAnalytics] get_employee_performance:', error.message)
+    perfData = data ?? []
+  }
+
   async function loadTarget() {
-    if (!selectedLocationId) { dailyTarget = 0; return }
+    if (!selectedLocationId || selectedLocationId === 'all') { dailyTarget = 0; return }
 
     // Check for today's override first
     const today = new Date().toISOString().slice(0, 10)
@@ -297,6 +314,92 @@ export function RevenueAnalytics({ user }) {
     return locations.find(l => l.id === id)?.name ?? '–'
   }
 
+  // ── Performance Matrix ────────────────────────────────────────────────────
+
+  function buildPerformanceMatrix() {
+    const MONTHS = ['Januar','Februar','März','April','Mai','Juni',
+                    'Juli','August','September','Oktober','November','Dezember']
+    const curYear = new Date().getFullYear()
+    const years   = [curYear, curYear - 1, curYear - 2]
+
+    // Frontend location filter: match employee's location via profiles lookup
+    let rows = perfData.filter(r => r != null)
+    if (selectedLocationId && selectedLocationId !== 'all') {
+      rows = rows.filter(r => {
+        const prof = profiles.find(p => p.id === (r.employee_id ?? r.id))
+        return prof?.location_id === selectedLocationId || r.location_id === selectedLocationId
+      })
+    }
+
+    const monthLabel = `${MONTHS[(perfMonth ?? 1) - 1]} ${perfYear}`
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <h4>Mitarbeiter-Umsatz & Performance Matrix</h4>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="perf-month" style="padding:5px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;background:var(--white)">
+              ${MONTHS.map((m, i) => `<option value="${i+1}" ${perfMonth === i+1 ? 'selected' : ''}>${m}</option>`).join('')}
+            </select>
+            <select id="perf-year" style="padding:5px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;background:var(--white)">
+              ${years.map(y => `<option value="${y}" ${perfYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        ${!rows.length ? `
+          <div class="empty-state" style="padding:32px 20px">
+            <span class="empty-state-icon">◉</span>
+            <p>Keine Performance-Daten für ${monthLabel}.</p>
+          </div>
+        ` : `
+          <div class="table-wrapper">
+            <table style="font-size:0.85rem">
+              <thead>
+                <tr>
+                  <th>Mitarbeiter</th>
+                  <th>Arbeitszeit (Ist / Soll)</th>
+                  <th>Konto (+/−)</th>
+                  <th style="text-align:right">Umsatz Gesamt</th>
+                  <th style="text-align:right">Trinkgeld</th>
+                  <th style="text-align:center">Behandlungen</th>
+                  <th style="text-align:right">Schnitt Ø</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => {
+                  const worked  = Number(r.hours_worked    ?? r.net_hours_month ?? 0)
+                  const target  = Number(r.target_hours    ?? 160) || 160
+                  const revenue = Number(r.total_revenue   ?? r.revenue ?? 0)
+                  const tips    = Number(r.total_tips      ?? r.tips    ?? 0)
+                  const count   = Number(r.treatment_count ?? r.treatments ?? 0)
+                  const name    = r.full_name ?? r.name ?? '–'
+
+                  const balance  = worked - target
+                  const balStr   = (balance >= 0 ? '+' : '') + balance.toFixed(1) + ' Std.'
+                  const balColor = balance >= 0 ? '#27AE60' : 'var(--terracotta)'
+                  const avg      = count > 0 ? revenue / count : 0
+
+                  return `
+                    <tr>
+                      <td style="font-weight:600;color:var(--aubergine)">${name}</td>
+                      <td style="color:var(--text-mid)">${worked.toFixed(1)} / ${target} Std.</td>
+                      <td style="font-weight:700;color:${balColor}">${worked > 0 || balance < 0 ? balStr : '–'}</td>
+                      <td style="text-align:right;font-weight:600;color:var(--aubergine)">${fmt(revenue)}</td>
+                      <td style="text-align:right;color:var(--gold)">${tips > 0 ? fmt(tips) : '–'}</td>
+                      <td style="text-align:center">${count > 0 ? count : '–'}</td>
+                      <td style="text-align:right;color:var(--text-mid)">${count > 0 ? fmt(avg) : '–'}</td>
+                    </tr>
+                  `
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+    `
+  }
+
   // ── Main HTML ─────────────────────────────────────────────────────────────
 
   function buildHTML() {
@@ -319,6 +422,7 @@ export function RevenueAnalytics({ user }) {
           <button class="location-tab ${period==='month' ? 'active':''}" data-period="month">Monat</button>
         </div>
         <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
+          <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
           ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
         </select>
         <select id="analytics-employee" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
@@ -377,12 +481,15 @@ export function RevenueAnalytics({ user }) {
       </div>
 
       <!-- Trinkgeld-Zusammenfassung -->
-      <div class="card">
+      <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Trinkgeld-Übersicht</h4><span style="font-size:0.75rem;color:var(--text-light)">${label}</span></div>
         <div style="padding:0 0 4px">
           ${buildTipSummary()}
         </div>
       </div>
+
+      <!-- Mitarbeiter-Performance-Matrix -->
+      ${buildPerformanceMatrix()}
     `
   }
 
@@ -397,9 +504,8 @@ export function RevenueAnalytics({ user }) {
     })
 
     container.querySelector('#analytics-location')?.addEventListener('change', async e => {
-      selectedLocationId = e.target.value
-      await loadLogs()
-      await loadTarget()
+      selectedLocationId = e.target.value || 'all'
+      await Promise.all([loadLogs(), loadTarget()])
       rerender()
     })
 
@@ -407,6 +513,18 @@ export function RevenueAnalytics({ user }) {
       selectedEmployeeId = e.target.value || null
       rerender()
     })
+
+    // Performance matrix: month/year selectors — reload RPC data, no full loadLogs()
+    const onPerfChange = async () => {
+      const mEl = container.querySelector('#perf-month')
+      const yEl = container.querySelector('#perf-year')
+      if (mEl) perfMonth = parseInt(mEl.value, 10)
+      if (yEl) perfYear  = parseInt(yEl.value, 10)
+      await loadPerfData()
+      rerender()
+    }
+    container.querySelector('#perf-month')?.addEventListener('change', onPerfChange)
+    container.querySelector('#perf-year')?.addEventListener('change',  onPerfChange)
   }
 
   function rerender() {
