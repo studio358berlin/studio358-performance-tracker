@@ -25,7 +25,7 @@ export function DailyCheckout({ user, onNavigate }) {
         : baseQueries
     )
     locations  = locRes.data   ?? []
-    treatments = treatRes.data ?? []
+    treatments = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
     todayLogs  = logRes
     if (isManager) employees = empRes?.data ?? []
 

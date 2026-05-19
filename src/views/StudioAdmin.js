@@ -30,7 +30,8 @@ export function StudioAdmin({ user }) {
       supabase.from('treatments').select('*, location:location_id(name)').order('name'),
     ])
     locations  = locRes.data  ?? []
-    treatments = treatRes.data ?? []
+    // exclude soft-deleted treatments (is_deleted may be null on old rows — treat as false)
+    treatments = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
   }
 
   // ── Treatment CRUD ───────────────────────────────────────────────────────────
@@ -68,10 +69,10 @@ export function StudioAdmin({ user }) {
 
   async function deleteTreatment(id) {
     const t = treatments.find(x => x.id === id)
-    if (!confirm(`Behandlung "${t?.name ?? ''}" endgültig löschen?\n\nAchtung: Nur möglich wenn keine Umsätze damit gebucht wurden.`)) return
-    const { error } = await supabase.from('treatments').delete().eq('id', id)
-    if (error) { showToast('Löschen nicht möglich: ' + error.message, 'error'); return }
-    showToast('Behandlung gelöscht.')
+    if (!confirm(`Behandlung "${t?.name ?? ''}" archivieren?\n\nSie verschwindet aus allen Listen. Historische Buchungen bleiben erhalten.`)) return
+    const { error } = await supabase.from('treatments').update({ is_deleted: true }).eq('id', id)
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+    showToast('Behandlung archiviert.')
     await loadData()
     rerender()
   }
@@ -79,9 +80,13 @@ export function StudioAdmin({ user }) {
   // ── Location CRUD ─────────────────────────────────────────────────────────────
 
   async function saveLocation(data, id = null) {
+    const name = (data.name ?? '').trim()
+    if (!name) { showToast('Name ist erforderlich.', 'error'); return }
+    // derive slug from slug field if provided, otherwise from name
+    const slug = (data.slug?.trim() || name).toLowerCase().replace(/\s+/g, '-')
     const payload = {
-      name:                 data.name.trim(),
-      slug:                 data.slug.trim().toLowerCase().replace(/\s+/g, '-'),
+      name,
+      slug,
       daily_revenue_target: Math.max(0, parseFloat(data.daily_revenue_target) || 0),
     }
     const { error } = id
