@@ -174,7 +174,6 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function openModal(treatment, existingLog = null) {
     const overlay = document.createElement('div')
-    // Set each property individually — avoids inset shorthand which fails on older iOS Safari
     overlay.style.position        = 'fixed'
     overlay.style.top             = '0'
     overlay.style.left            = '0'
@@ -192,23 +191,33 @@ export function DailyCheckout({ user, onNavigate }) {
     const isNS     = existingLog?.is_no_show ?? false
     const upsell   = existingLog?.upsell_amount ?? 0
     const tip      = existingLog?.tip ?? 0
-    const price    = treatment?.price ?? 0
     const curPay   = existingLog?.payment_method ?? 'bar'
     const curEmpId = existingLog?.employee_id ?? user.id
+
+    // Mutable active treatment — changes when manager picks different one in edit mode
+    let activeTreatment = treatment ?? {}
+    const availableTreats = locationTreatments()
 
     overlay.innerHTML = `
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:420px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
 
-        <!-- Header -->
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
-          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${treatment?.name ?? 'Behandlung'}</h3>
-          <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        <!-- Header: treatment dropdown in edit+manager mode, static name otherwise -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0;gap:8px">
+          ${isEdit && isManager ? `
+            <select id="modal-treatment"
+              style="flex:1;padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine);font-weight:600;background:var(--cream)">
+              ${availableTreats.map(t => `<option value="${t.id}" ${t.id === activeTreatment.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+            </select>
+          ` : `
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine);flex:1">${activeTreatment.name ?? 'Behandlung'}</h3>
+          `}
+          <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px;flex-shrink:0">✕</button>
         </div>
 
-        <!-- Price badge -->
+        <!-- Price badge — id for live update -->
         <div style="margin:14px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
           <span style="font-size:0.85rem;color:var(--text-mid)">Behandlungspreis</span>
-          <strong style="color:var(--aubergine);font-size:1.05rem">${fmt(price)}</strong>
+          <strong id="modal-price-val" style="color:var(--aubergine);font-size:1.05rem">${fmt(activeTreatment.price ?? 0)}</strong>
         </div>
 
         <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px">
@@ -258,7 +267,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
           <!-- Revenue preview -->
           <div style="font-size:0.8rem;color:var(--text-light);text-align:right">
-            Umsatz: <strong id="modal-rev-val">${fmt(isEdit ? existingLog.revenue : price)}</strong>
+            Umsatz: <strong id="modal-rev-val">${fmt(isEdit ? existingLog.revenue : (activeTreatment.price ?? 0))}</strong>
           </div>
         </div>
 
@@ -277,6 +286,15 @@ export function DailyCheckout({ user, onNavigate }) {
     const nsCheckbox   = overlay.querySelector('#modal-noshow')
     const noshowLabel  = overlay.querySelector('#noshow-label')
     const revVal       = overlay.querySelector('#modal-rev-val')
+    const priceVal     = overlay.querySelector('#modal-price-val')
+    const treatSelect  = overlay.querySelector('#modal-treatment')
+
+    // Treatment switcher (edit + manager only): sync price badge + revenue preview
+    treatSelect?.addEventListener('change', () => {
+      activeTreatment = availableTreats.find(t => t.id === treatSelect.value) ?? activeTreatment
+      priceVal.textContent = fmt(activeTreatment.price ?? 0)
+      updatePreview()
+    })
 
     // Payment button toggle
     let selectedPayment = curPay
@@ -294,14 +312,15 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     function updatePreview() {
-      const ns  = nsCheckbox.checked
-      const u   = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
+      const ns    = nsCheckbox.checked
+      const u     = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
+      const price = activeTreatment.price ?? 0
       revVal.textContent = fmt(ns ? 0 : (price + u))
-      upsellInput.style.opacity      = ns ? '0.4' : '1'
+      upsellInput.style.opacity       = ns ? '0.4' : '1'
       upsellInput.style.pointerEvents = ns ? 'none' : ''
-      tipInput.style.opacity         = ns ? '0.4' : '1'
-      tipInput.style.pointerEvents   = ns ? 'none' : ''
-      noshowLabel.style.background   = ns ? 'rgba(181,87,58,0.08)' : 'transparent'
+      tipInput.style.opacity          = ns ? '0.4' : '1'
+      tipInput.style.pointerEvents    = ns ? 'none' : ''
+      noshowLabel.style.background    = ns ? 'rgba(181,87,58,0.08)' : 'transparent'
       if (ns) { upsellInput.value = '0'; tipInput.value = '0' }
     }
 
@@ -324,7 +343,7 @@ export function DailyCheckout({ user, onNavigate }) {
       saveBtn.textContent = 'Speichern...'
 
       const ok = await saveLog({
-        treatment_id:   treatment?.id,
+        treatment_id:   activeTreatment.id,
         upsell_amount:  u,
         tip:            t,
         is_no_show:     ns,
