@@ -55,12 +55,14 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function fetchTodayLogs() {
-    const today = new Date().toISOString().slice(0, 10)
+    // Use local-timezone midnight/end-of-day so the filter is always correct in CET/CEST
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
+    const endOfDay   = new Date(); endOfDay.setHours(23, 59, 59, 999)
     let query = supabase
       .from('daily_revenue_logs')
       .select('*, treatment:treatment_id(name, price, duration), employee:employee_id(full_name)')
-      .gte('created_at', today + 'T00:00:00')
-      .lte('created_at', today + 'T23:59:59')
+      .gte('created_at', startOfDay.toISOString())
+      .lte('created_at', endOfDay.toISOString())
       .order('created_at', { ascending: false })
 
     if (!isManager) {
@@ -95,9 +97,9 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function canEdit(log) {
     if (log.is_cancelled) return false
-    const logDate = new Date(log.created_at).toISOString().slice(0, 10)
-    const today   = new Date().toISOString().slice(0, 10)
-    if (logDate !== today) return false
+    const ld = new Date(log.created_at)
+    const logDate = `${ld.getFullYear()}-${String(ld.getMonth()+1).padStart(2,'0')}-${String(ld.getDate()).padStart(2,'0')}`
+    if (logDate !== localDate()) return false
     if (isManager) return true
     return log.employee_id === user.id
   }
@@ -184,12 +186,14 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function saveHours(hours, breakMins) {
-    const today = localDate()
+    const today      = localDate()
+    // Prefer the UUID stored directly on the profile; fall back to what was resolved from the slug
+    const locationId = user?.profile?.location_id ?? selectedLocationId ?? null
     const { data, error } = await supabase
       .from('employee_daily_hours')
       .upsert({
         employee_id:   user.id,
-        location_id:   selectedLocationId,
+        location_id:   locationId,
         work_date:     today,
         work_hours:    parseFloat(String(hours)) || 0,
         break_minutes: Math.max(0, parseInt(String(breakMins), 10) || 0),
