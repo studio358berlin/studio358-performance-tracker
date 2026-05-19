@@ -25,9 +25,9 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
-        .select('work_date, work_hours, break_minutes')
+        .select('date, hours_worked, break_minutes')
         .eq('employee_id', user.id)
-        .gte('work_date', monthStart),
+        .gte('date', monthStart),
     ])
     const all   = evalRes.data ?? []
     allEntries  = all
@@ -188,10 +188,10 @@ export function EmployeeView({ user, onNavigate }) {
       d.setDate(d.getDate() - day + 1); return d.toISOString().slice(0, 10)
     })()
     const netMinsWeek  = hoursData
-      .filter(h => h.work_date >= weekStart)
-      .reduce((s, h) => s + Math.max(0, h.work_hours * 60 - h.break_minutes), 0)
+      .filter(h => h.date >= weekStart)
+      .reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
     const netMinsMonth = hoursData
-      .reduce((s, h) => s + Math.max(0, h.work_hours * 60 - h.break_minutes), 0)
+      .reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
 
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">

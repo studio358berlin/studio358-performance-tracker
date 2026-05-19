@@ -44,12 +44,12 @@ export function DailyCheckout({ user, onNavigate }) {
     const todayDate = localDate()
     if (isManager) {
       const { data: hData } = await supabase
-        .from('employee_daily_hours').select('*').eq('work_date', todayDate)
+        .from('employee_daily_hours').select('*').eq('date', todayDate)
       teamHoursMap = Object.fromEntries((hData ?? []).map(h => [h.employee_id, h]))
     } else {
       const { data: hData } = await supabase
         .from('employee_daily_hours').select('*')
-        .eq('employee_id', user.id).eq('work_date', todayDate).maybeSingle()
+        .eq('employee_id', user.id).eq('date', todayDate).maybeSingle()
       hoursToday = hData ?? null
     }
   }
@@ -194,9 +194,7 @@ export function DailyCheckout({ user, onNavigate }) {
     const payload = {
       employee_id:   user.id,
       date:          today,
-      work_date:     today,
       hours_worked:  h,
-      work_hours:    h,
       break_minutes: b,
       location_id:   locId,
     }
@@ -205,22 +203,10 @@ export function DailyCheckout({ user, onNavigate }) {
     try {
       const r1 = await supabase
         .from('employee_daily_hours')
-        .upsert(payload, { onConflict: 'employee_id,work_date' })
+        .upsert(payload, { onConflict: 'employee_id,date' })
         .select().single()
       data  = r1.data
       error = r1.error
-
-      if (error) {
-        const r2 = await supabase
-          .from('employee_daily_hours')
-          .upsert(
-            { employee_id: user.id, date: today, hours_worked: h },
-            { onConflict: 'employee_id,work_date' }
-          )
-          .select().single()
-        data  = r2.data
-        error = r2.error
-      }
     } catch (err) {
       showToast('Fehler: ' + (err?.message || 'Unbekannter Fehler'), 'error')
       return false
@@ -248,7 +234,7 @@ export function DailyCheckout({ user, onNavigate }) {
     overlay.style.padding         = '16px'
     overlay.style.boxSizing       = 'border-box'
 
-    const curHours = hoursToday?.work_hours ?? 8
+    const curHours = hoursToday?.hours_worked ?? 8
     const curBreak = hoursToday?.break_minutes ?? 30
 
     overlay.innerHTML = `
@@ -315,7 +301,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
     let utilStr = '–'
     if (hoursToday) {
-      const netMins = Math.max(1, hoursToday.work_hours * 60 - hoursToday.break_minutes)
+      const netMins = Math.max(1, hoursToday.hours_worked * 60 - hoursToday.break_minutes)
       const util    = Math.round((treatMins / netMins) * 100)
       const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
       utilStr = `<span style="color:${uCol};font-weight:700">${util}%</span>`
@@ -333,7 +319,7 @@ export function DailyCheckout({ user, onNavigate }) {
           <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
             <div>
               <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Arbeitszeit</div>
-              <div style="font-weight:700;color:var(--aubergine)">${hoursToday.work_hours} Std.</div>
+              <div style="font-weight:700;color:var(--aubergine)">${hoursToday.hours_worked} Std.</div>
             </div>
             <div>
               <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Pause</div>
@@ -341,7 +327,7 @@ export function DailyCheckout({ user, onNavigate }) {
             </div>
             <div>
               <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Netto</div>
-              <div style="font-weight:700;color:var(--aubergine)">${Math.max(0, hoursToday.work_hours - hoursToday.break_minutes / 60).toFixed(1)} Std.</div>
+              <div style="font-weight:700;color:var(--aubergine)">${Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)} Std.</div>
             </div>
             <div>
               <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Auslastung</div>
@@ -361,7 +347,7 @@ export function DailyCheckout({ user, onNavigate }) {
   function buildHoursBanner() {
     const done = !!hoursToday
     const netH = done
-      ? Math.max(0, Number(hoursToday.work_hours) - Number(hoursToday.break_minutes) / 60).toFixed(1)
+      ? Math.max(0, Number(hoursToday.hours_worked) - Number(hoursToday.break_minutes) / 60).toFixed(1)
       : null
     const bg = done ? '#27AE60' : 'var(--terracotta)'
     return `
@@ -377,7 +363,7 @@ export function DailyCheckout({ user, onNavigate }) {
         </span>
         <span style="font-size:0.8rem;opacity:0.85">
           ${done
-            ? `${Number(hoursToday.work_hours)} Std. · ${Number(hoursToday.break_minutes)} Min. Pause · ${netH} Std. Netto`
+            ? `${Number(hoursToday.hours_worked)} Std. · ${Number(hoursToday.break_minutes)} Min. Pause · ${netH} Std. Netto`
             : 'Pflicht ›'}
         </span>
       </button>
@@ -646,7 +632,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
     const cards = Object.entries(byEmp).map(([empId, d]) => {
       const dbH       = teamHoursMap[empId]
-      const initHours = Number(dbH?.work_hours ?? 8)
+      const initHours = Number(dbH?.hours_worked ?? 8)
       const initBreak = Number(dbH?.break_minutes ?? 0)
       const netMins   = Math.max(1, initHours * 60 - initBreak)
       const split     = Object.entries(d.counts).map(([n, c]) => `${c}× ${n}`).join(' · ') || '–'

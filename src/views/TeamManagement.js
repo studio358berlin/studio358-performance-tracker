@@ -27,8 +27,8 @@ export function TeamManagement({ user }) {
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
-        .select('employee_id, work_date, work_hours, break_minutes')
-        .gte('work_date', firstOfMonthStr),
+        .select('employee_id, date, hours_worked, break_minutes, location_id')
+        .gte('date', firstOfMonthStr),
     ])
     employees   = empRes.data  ?? []
     evaluations = evalRes.data ?? []
@@ -377,7 +377,7 @@ export function TeamManagement({ user }) {
   function openAdminHoursModal(empId) {
     const today    = localDate()
     const emp      = employees.find(e => e.id === empId)
-    const existing = employeeHours.find(h => h.employee_id === empId && h.work_date === today)
+    const existing = employeeHours.find(h => h.employee_id === empId && h.date === today)
 
     const overlay = document.createElement('div')
     overlay.style.position        = 'fixed'
@@ -393,7 +393,7 @@ export function TeamManagement({ user }) {
     overlay.style.padding         = '16px'
     overlay.style.boxSizing       = 'border-box'
 
-    const curHours = Number(existing?.work_hours) || 8
+    const curHours = Number(existing?.hours_worked) || 8
     const curBreak = Number(existing?.break_minutes) || 0
 
     overlay.innerHTML = `
@@ -457,23 +457,11 @@ export function TeamManagement({ user }) {
           .upsert({
             employee_id:   empId,
             date:          today,
-            work_date:     today,
             hours_worked:  h,
-            work_hours:    h,
             break_minutes: b,
             location_id:   emp?.location_id ?? null,
-          }, { onConflict: 'employee_id,work_date' })
+          }, { onConflict: 'employee_id,date' })
         upsertError = r1.error
-
-        if (upsertError) {
-          const r2 = await supabase
-            .from('employee_daily_hours')
-            .upsert(
-              { employee_id: empId, date: today, hours_worked: h },
-              { onConflict: 'employee_id,work_date' }
-            )
-          upsertError = r2.error
-        }
       } catch (err) {
         showToast('Fehler: ' + (err?.message || 'Unbekannter Fehler'), 'error')
         saveBtn.disabled = false; saveBtn.textContent = 'Speichern'
@@ -502,11 +490,11 @@ export function TeamManagement({ user }) {
 
     const rows = employees.map(emp => {
       const empH = employeeHours.filter(h => h.employee_id === emp.id)
-      const netMins = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.work_hours * 60 - h.break_minutes), 0)
+      const netMins = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
       return {
         emp,
-        todayMins: netMins(h => h.work_date === today),
-        weekMins:  netMins(h => h.work_date >= weekStart),
+        todayMins: netMins(h => h.date === today),
+        weekMins:  netMins(h => h.date >= weekStart),
         monthMins: netMins(() => true),
       }
     })
