@@ -18,8 +18,9 @@ export function TeamManagement({ user }) {
   let container      = null
 
   async function loadData() {
-    const firstOfMonth    = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-    const firstOfMonthStr = firstOfMonth.slice(0, 10)
+    const now             = new Date()
+    const firstOfMonth    = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
 
     const [empRes, evalRes, logsRes, hoursRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
@@ -373,11 +374,112 @@ export function TeamManagement({ user }) {
     `
   }
 
+  function openAdminHoursModal(empId) {
+    const today    = localDate()
+    const emp      = employees.find(e => e.id === empId)
+    const existing = employeeHours.find(h => h.employee_id === empId && h.work_date === today)
+
+    const overlay = document.createElement('div')
+    overlay.style.position        = 'fixed'
+    overlay.style.top             = '0'
+    overlay.style.left            = '0'
+    overlay.style.width           = '100vw'
+    overlay.style.height          = '100vh'
+    overlay.style.zIndex          = '9999'
+    overlay.style.display         = 'flex'
+    overlay.style.alignItems      = 'center'
+    overlay.style.justifyContent  = 'center'
+    overlay.style.background      = 'rgba(0,0,0,0.55)'
+    overlay.style.padding         = '16px'
+    overlay.style.boxSizing       = 'border-box'
+
+    const curHours = Number(existing?.work_hours) || 8
+    const curBreak = Number(existing?.break_minutes) || 0
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Stundenkorrektur</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${emp?.full_name ?? '–'} · ${today}</div>
+          </div>
+          <button id="ah-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Arbeitszeit (Stunden)
+            <input id="ah-hours" type="number" min="0" max="24" step="0.5" value="${curHours}"
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1.1rem;font-weight:600;text-align:center">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Pause (Minuten)
+            <input id="ah-break" type="number" min="0" max="180" step="5" value="${curBreak}"
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1.1rem;font-weight:600;text-align:center">
+          </label>
+          <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;font-size:0.85rem;color:var(--text-mid)">
+            Netto: <strong id="ah-net" style="color:var(--aubergine)">– Std.</strong>
+          </div>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="ah-save" class="btn btn-accent" style="width:100%;justify-content:center">Speichern</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const hoursInput = overlay.querySelector('#ah-hours')
+    const breakInput = overlay.querySelector('#ah-break')
+    const netDisplay = overlay.querySelector('#ah-net')
+
+    function updateNet() {
+      const h = Math.max(0, parseFloat(hoursInput.value) || 0)
+      const b = Math.max(0, parseFloat(breakInput.value) || 0)
+      netDisplay.textContent = Math.max(0, h - b / 60).toFixed(1) + ' Std.'
+    }
+    updateNet()
+    hoursInput.addEventListener('input', updateNet)
+    breakInput.addEventListener('input', updateNet)
+
+    overlay.querySelector('#ah-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#ah-save').addEventListener('click', async () => {
+      const h = Math.max(0, parseFloat(hoursInput.value) || 0)
+      const b = Math.max(0, parseInt(breakInput.value, 10) || 0)
+      const saveBtn = overlay.querySelector('#ah-save')
+      saveBtn.disabled = true; saveBtn.textContent = 'Speichern...'
+
+      const { error } = await supabase
+        .from('employee_daily_hours')
+        .upsert({
+          employee_id:   empId,
+          location_id:   emp?.location_id ?? null,
+          work_date:     today,
+          work_hours:    parseFloat(String(h)) || 0,
+          break_minutes: Math.max(0, parseInt(String(b), 10) || 0),
+          created_by:    user.id,
+          updated_at:    new Date().toISOString(),
+        }, { onConflict: 'employee_id,work_date' })
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        saveBtn.disabled = false; saveBtn.textContent = 'Speichern'
+        return
+      }
+      showToast(`Stunden für ${emp?.full_name ?? '–'} aktualisiert.`)
+      overlay.remove()
+      await loadData()
+      rerender()
+    })
+  }
+
   function buildHoursTable() {
-    const today     = new Date().toISOString().slice(0, 10)
+    const today     = localDate()
     const weekStart = (() => {
       const d = new Date(); const day = d.getDay() || 7
-      d.setDate(d.getDate() - day + 1); return d.toISOString().slice(0, 10)
+      d.setDate(d.getDate() - (day - 1))
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     })()
 
     const rows = employees.map(emp => {
@@ -409,7 +511,7 @@ export function TeamManagement({ user }) {
             </thead>
             <tbody>
               ${rows.map(({ emp, todayMins, weekMins, monthMins }) => `
-                <tr>
+                <tr class="hours-row" data-emp="${emp.id}" style="cursor:pointer" title="Klicken zum Bearbeiten">
                   <td>
                     <div style="font-weight:500">${emp.full_name}</div>
                     <div style="font-size:0.72rem;color:var(--text-light)">${locationLabel(emp.location)}</div>
@@ -540,6 +642,12 @@ export function TeamManagement({ user }) {
       }
     })
 
+    container.querySelectorAll('.hours-row[data-emp]').forEach(row => {
+      row.addEventListener('pointerenter', () => { row.style.background = 'var(--cream)' })
+      row.addEventListener('pointerleave', () => { row.style.background = '' })
+      row.addEventListener('click', () => openAdminHoursModal(row.dataset.emp))
+    })
+
     const tableArea = container.querySelector('#team-table-area')
     if (tableArea) {
       const table = TeamTable({
@@ -576,6 +684,11 @@ export function TeamManagement({ user }) {
   }
 
   return { render }
+}
+
+function localDate() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
 function locationLabel(loc) {

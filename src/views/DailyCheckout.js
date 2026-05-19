@@ -41,7 +41,7 @@ export function DailyCheckout({ user, onNavigate }) {
     }
 
     // Load today's working-hours entries
-    const todayDate = new Date().toISOString().slice(0, 10)
+    const todayDate = localDate()
     if (isManager) {
       const { data: hData } = await supabase
         .from('employee_daily_hours').select('*').eq('work_date', todayDate)
@@ -184,15 +184,15 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function saveHours(hours, breakMins) {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDate()
     const { data, error } = await supabase
       .from('employee_daily_hours')
       .upsert({
         employee_id:   user.id,
         location_id:   selectedLocationId,
         work_date:     today,
-        work_hours:    hours,
-        break_minutes: breakMins,
+        work_hours:    parseFloat(String(hours)) || 0,
+        break_minutes: Math.max(0, parseInt(String(breakMins), 10) || 0),
         created_by:    user.id,
         updated_at:    new Date().toISOString(),
       }, { onConflict: 'employee_id,work_date' })
@@ -326,6 +326,32 @@ export function DailyCheckout({ user, onNavigate }) {
           </div>
         `}
       </div>
+    `
+  }
+
+  function buildHoursBanner() {
+    const done = !!hoursToday
+    const netH = done
+      ? Math.max(0, Number(hoursToday.work_hours) - Number(hoursToday.break_minutes) / 60).toFixed(1)
+      : null
+    const bg = done ? '#27AE60' : 'var(--terracotta)'
+    return `
+      <button id="btn-hours-banner" style="
+        display:flex;align-items:center;justify-content:space-between;
+        width:100%;padding:14px 18px;margin-bottom:20px;
+        border:none;border-radius:var(--radius-md);cursor:pointer;
+        background:${bg};color:#fff;
+        box-shadow:0 2px 10px rgba(0,0,0,0.18);
+      ">
+        <span style="font-size:0.95rem;font-weight:700">
+          ${done ? '✓ Arbeitszeit erfasst' : '⚠ Arbeitszeit noch nicht erfasst – Jetzt eintragen!'}
+        </span>
+        <span style="font-size:0.8rem;opacity:0.85">
+          ${done
+            ? `${Number(hoursToday.work_hours)} Std. · ${Number(hoursToday.break_minutes)} Min. Pause · ${netH} Std. Netto`
+            : 'Pflicht ›'}
+        </span>
+      </button>
     `
   }
 
@@ -644,6 +670,8 @@ export function DailyCheckout({ user, onNavigate }) {
         </div>
       </div>
 
+      ${!isManager ? buildHoursBanner() : ''}
+
       ${isManager ? `
         <div style="margin-bottom:16px">
           <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
@@ -768,6 +796,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
     container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursModal())
+    container.querySelector('#btn-hours-banner')?.addEventListener('click', () => openHoursModal())
 
     container.querySelectorAll('.btn-edit-log[data-id]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -828,6 +857,11 @@ export function DailyCheckout({ user, onNavigate }) {
 
 function fmt(n) {
   return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+}
+
+function localDate() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
 function showToast(message, type = 'success') {
