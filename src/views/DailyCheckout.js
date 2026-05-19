@@ -194,8 +194,9 @@ export function DailyCheckout({ user, onNavigate }) {
     // are intentionally omitted; DB defaults handle them to avoid schema conflicts.
     const payload = {
       employee_id:   user.id,
-      work_date:     today,
-      work_hours:    workHours,
+      date:          today,        // trigger alias
+      work_date:     today,        // actual column
+      hours_worked:  workHours,    // trigger alias for work_hours
       break_minutes: breakMin,
     }
 
@@ -213,7 +214,7 @@ export function DailyCheckout({ user, onNavigate }) {
         const r2 = await supabase
           .from('employee_daily_hours')
           .upsert(
-            { employee_id: user.id, work_date: today, work_hours: workHours },
+            { employee_id: user.id, date: today, hours_worked: workHours },
             { onConflict: 'employee_id,work_date' }
           )
           .select().single()
@@ -429,9 +430,9 @@ export function DailyCheckout({ user, onNavigate }) {
 
         <!-- Treatment switcher (edit + manager): same width/style as price badge -->
         ${isEdit && isManager ? `
-        <div style="margin:12px 20px 0;background:var(--cream-dark);border-radius:var(--radius-sm)">
+        <div style="margin:12px 20px 0;display:flex;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
           <select id="modal-treatment"
-            style="width:100%;padding:10px 14px;background:transparent;border:none;outline:none;font-size:0.92rem;color:var(--aubergine);font-weight:600;cursor:pointer;border-radius:var(--radius-sm)">
+            style="flex:1;background:transparent;border:none;outline:none;font-size:0.92rem;color:var(--aubergine);font-weight:600;cursor:pointer">
             ${availableTreats.map(t => `<option value="${t.id}" ${t.id === activeTreatment.id ? 'selected' : ''}>${t.name}</option>`).join('')}
           </select>
         </div>
