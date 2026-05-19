@@ -186,18 +186,19 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function saveHours(hours, breakMins) {
-    const today     = localDate()
-    const workHours = parseFloat(String(hours)) || 0
-    const breakMin  = Math.max(0, parseInt(String(breakMins), 10) || 0)
+    const today    = localDate()
+    const h        = parseFloat(String(hours)) || 0
+    const b        = Math.max(0, parseInt(String(breakMins), 10) || 0)
+    const locId    = user?.profile?.location_id ?? null
 
-    // Minimal payload — created_at / updated_at / location_id / created_by
-    // are intentionally omitted; DB defaults handle them to avoid schema conflicts.
     const payload = {
       employee_id:   user.id,
-      date:          today,        // trigger alias
-      work_date:     today,        // actual column
-      hours_worked:  workHours,    // trigger alias for work_hours
-      break_minutes: breakMin,
+      date:          today,
+      work_date:     today,
+      hours_worked:  h,
+      work_hours:    h,
+      break_minutes: b,
+      location_id:   locId,
     }
 
     let data, error
@@ -209,12 +210,11 @@ export function DailyCheckout({ user, onNavigate }) {
       data  = r1.data
       error = r1.error
 
-      // Emergency fallback: absolute minimum — never block the employee
       if (error) {
         const r2 = await supabase
           .from('employee_daily_hours')
           .upsert(
-            { employee_id: user.id, date: today, hours_worked: workHours },
+            { employee_id: user.id, date: today, hours_worked: h },
             { onConflict: 'employee_id,work_date' }
           )
           .select().single()
@@ -229,8 +229,8 @@ export function DailyCheckout({ user, onNavigate }) {
     if (error) { showToast('Fehler: ' + error.message, 'error'); return false }
     hoursToday = data
     showToast('Arbeitszeit gespeichert.')
-    rerender()   // green banner + utilization update
-    return true  // caller closes modal
+    rerender()
+    return true
   }
 
   function openHoursModal() {

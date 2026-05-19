@@ -450,20 +450,38 @@ export function TeamManagement({ user }) {
       const saveBtn = overlay.querySelector('#ah-save')
       saveBtn.disabled = true; saveBtn.textContent = 'Speichern...'
 
-      const { error } = await supabase
-        .from('employee_daily_hours')
-        .upsert({
-          employee_id:   empId,
-          location_id:   emp?.location_id ?? null,
-          work_date:     today,
-          work_hours:    parseFloat(String(h)) || 0,
-          break_minutes: Math.max(0, parseInt(String(b), 10) || 0),
-          created_by:    user.id,
-          updated_at:    new Date().toISOString(),
-        }, { onConflict: 'employee_id,work_date' })
+      let upsertError = null
+      try {
+        const r1 = await supabase
+          .from('employee_daily_hours')
+          .upsert({
+            employee_id:   empId,
+            date:          today,
+            work_date:     today,
+            hours_worked:  h,
+            work_hours:    h,
+            break_minutes: b,
+            location_id:   emp?.location_id ?? null,
+          }, { onConflict: 'employee_id,work_date' })
+        upsertError = r1.error
 
-      if (error) {
-        showToast('Fehler: ' + error.message, 'error')
+        if (upsertError) {
+          const r2 = await supabase
+            .from('employee_daily_hours')
+            .upsert(
+              { employee_id: empId, date: today, hours_worked: h },
+              { onConflict: 'employee_id,work_date' }
+            )
+          upsertError = r2.error
+        }
+      } catch (err) {
+        showToast('Fehler: ' + (err?.message || 'Unbekannter Fehler'), 'error')
+        saveBtn.disabled = false; saveBtn.textContent = 'Speichern'
+        return
+      }
+
+      if (upsertError) {
+        showToast('Fehler: ' + upsertError.message, 'error')
         saveBtn.disabled = false; saveBtn.textContent = 'Speichern'
         return
       }
