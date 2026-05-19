@@ -207,18 +207,18 @@ export function DailyCheckout({ user, onNavigate }) {
           <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
         </div>
 
-        <!-- Treatment switcher (edit + manager): same style as price badge -->
+        <!-- Treatment switcher (edit + manager): same width/style as price badge -->
         ${isEdit && isManager ? `
-        <div style="margin:14px 20px 0">
+        <div style="margin:12px 20px 0;background:var(--cream-dark);border-radius:var(--radius-sm)">
           <select id="modal-treatment"
-            style="width:100%;padding:10px 14px;background:var(--cream-dark);border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.92rem;color:var(--aubergine);font-weight:600;cursor:pointer">
+            style="width:100%;padding:10px 14px;background:transparent;border:none;outline:none;font-size:0.92rem;color:var(--aubergine);font-weight:600;cursor:pointer;border-radius:var(--radius-sm)">
             ${availableTreats.map(t => `<option value="${t.id}" ${t.id === activeTreatment.id ? 'selected' : ''}>${t.name}</option>`).join('')}
           </select>
         </div>
         ` : ''}
 
         <!-- Price badge — id for live update -->
-        <div style="margin:10px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
+        <div style="margin:8px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
           <span style="font-size:0.85rem;color:var(--text-mid)">Behandlungspreis</span>
           <strong id="modal-price-val" style="color:var(--aubergine);font-size:1.05rem">${fmt(activeTreatment.price ?? 0)}</strong>
         </div>
