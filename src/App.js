@@ -62,7 +62,8 @@ function renderLogin() {
   app.appendChild(Login({
     onSuccess: async () => {
       currentUser = await getCurrentUser()
-      if (currentUser) renderApp('checkout')
+      if (!currentUser) throw new Error('Profil nicht gefunden. Bitte Administrator kontaktieren.')
+      renderApp('checkout')
     },
   }).render())
 }
@@ -184,26 +185,39 @@ async function loadView(viewId) {
   if (!viewContainer) return
   viewContainer.innerHTML = '<div class="main-content"><div class="loader"><div class="spinner"></div></div></div>'
 
-  let el
-  if (viewId === 'checkout') {
-    el = await DailyCheckout({ user: currentUser, onNavigate: navigateTo }).render()
-  } else if (viewId === 'analytics' && isManager()) {
-    el = await RevenueAnalytics({ user: currentUser }).render()
-  } else if (viewId === 'dashboard' && isManager()) {
-    el = await Dashboard({ user: currentUser }).render()
-  } else if (viewId === 'team' && isManager()) {
-    el = await TeamManagement({ user: currentUser }).render()
-  } else if (viewId === 'my-performance') {
-    el = await EmployeeView({ user: currentUser, onNavigate: navigateTo }).render()
-  } else if (viewId === 'sops') {
-    el = await SOPView({ user: currentUser }).render()
-  } else if (viewId === 'admin' && isManager()) {
-    el = await StudioAdmin({ user: currentUser }).render()
-  } else {
-    el = await DailyCheckout({ user: currentUser, onNavigate: navigateTo }).render()
-  }
+  try {
+    let el
+    if (viewId === 'checkout') {
+      el = await DailyCheckout({ user: currentUser, onNavigate: navigateTo }).render()
+    } else if (viewId === 'analytics' && isManager()) {
+      el = await RevenueAnalytics({ user: currentUser }).render()
+    } else if (viewId === 'dashboard' && isManager()) {
+      el = await Dashboard({ user: currentUser }).render()
+    } else if (viewId === 'team' && isManager()) {
+      el = await TeamManagement({ user: currentUser }).render()
+    } else if (viewId === 'my-performance') {
+      el = await EmployeeView({ user: currentUser, onNavigate: navigateTo }).render()
+    } else if (viewId === 'sops') {
+      el = await SOPView({ user: currentUser }).render()
+    } else if (viewId === 'admin' && isManager()) {
+      el = await StudioAdmin({ user: currentUser }).render()
+    } else {
+      el = await DailyCheckout({ user: currentUser, onNavigate: navigateTo }).render()
+    }
 
-  if (el) { viewContainer.innerHTML = ''; viewContainer.appendChild(el) }
+    if (el) { viewContainer.innerHTML = ''; viewContainer.appendChild(el) }
+  } catch (err) {
+    console.error('[loadView] error:', err)
+    viewContainer.innerHTML = `
+      <div class="main-content">
+        <div class="card" style="margin-top:32px;border-left:3px solid var(--terracotta)">
+          <p style="color:var(--terracotta);font-weight:600">Fehler beim Laden</p>
+          <p style="color:var(--text-mid);font-size:0.875rem">${err.message}</p>
+          <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="location.reload()">Seite neu laden</button>
+        </div>
+      </div>
+    `
+  }
 }
 
 // ── View name map (used in mobile header) ─────────────────────────────────────

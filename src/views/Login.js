@@ -65,7 +65,7 @@ export function Login({ onSuccess }) {
 
       try {
         await login(email, password)
-        onSuccess?.()
+        await onSuccess?.()
       } catch (err) {
         errorEl.textContent = err.message === 'Invalid login credentials'
           ? 'E-Mail oder Passwort falsch.'

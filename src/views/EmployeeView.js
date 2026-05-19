@@ -23,7 +23,6 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
     ])
-    console.log('[EmployeeView] loadData:', { userId: user.id, error: evalRes.error, count: evalRes.data?.length, rows: evalRes.data })
     const all   = evalRes.data ?? []
     allEntries  = all
     evaluations = all.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
@@ -148,8 +147,6 @@ export function EmployeeView({ user, onNavigate }) {
     const latestForPI = latest ?? latestEntry
     const engineInput = latestForPI ? mapEntryToEngine(latestForPI, level, user.profile) : null
     const piResult    = engineInput ? calculatePerformance(engineInput) : null
-    console.log('PI DEBUG:', { latestEntry: latestForPI, piResult, evaluations: evaluations.length, allEntries: allEntries.length })
-    if (engineInput) console.log('RECHNUNG:', engineInput.managerScores, 'self:', engineInput.selfScores, 'obj:', engineInput.objektiveDaten)
     const qpi        = calcQPI(evaluations, level)
     const bonusStufe = piResult?.bonusStufe ?? null
 
