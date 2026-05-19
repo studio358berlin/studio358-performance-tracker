@@ -5,10 +5,17 @@ export function StudioAdmin({ user }) {
 
   let locations  = []
   let treatments = []
-  let activeTab  = 'treatments'  // 'treatments' | 'locations'
+  let activeTab  = 'treatments'  // 'treatments' | 'locations' | 'reports'
   let container  = null
   let editingTreatment = undefined  // undefined=list view, null=new form, {obj}=edit form
   let editingLocation  = undefined
+
+  // Reports state
+  const _now = new Date()
+  let reportYear  = _now.getFullYear()
+  let reportMonth = _now.getMonth() + 1  // 1–12
+  let reportLogs  = []   // daily_revenue_logs for selected month
+  let reportHours = []   // employee_daily_hours for selected month
 
   // ── Guard ────────────────────────────────────────────────────────────────────
   if (!isManager) {
@@ -30,8 +37,29 @@ export function StudioAdmin({ user }) {
       supabase.from('treatments').select('*, location:location_id(name)').order('name'),
     ])
     locations  = locRes.data  ?? []
-    // exclude soft-deleted treatments (is_deleted may be null on old rows — treat as false)
     treatments = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
+  }
+
+  async function loadReportData() {
+    const mm       = String(reportMonth).padStart(2, '0')
+    const firstDay = `${reportYear}-${mm}-01`
+    const lastDate = new Date(reportYear, reportMonth, 0).getDate()
+    const lastDay  = `${reportYear}-${mm}-${String(lastDate).padStart(2, '0')}`
+
+    const [logsRes, hoursRes] = await Promise.all([
+      supabase.from('daily_revenue_logs')
+        .select('*, employee:employee_id(full_name), treatment:treatment_id(name, duration)')
+        .gte('created_at', firstDay + 'T00:00:00')
+        .lte('created_at', lastDay + 'T23:59:59')
+        .order('created_at'),
+      supabase.from('employee_daily_hours')
+        .select('*, employee:employee_id(full_name)')
+        .gte('date', firstDay)
+        .lte('date', lastDay)
+        .order('date'),
+    ])
+    reportLogs  = logsRes.data  ?? []
+    reportHours = hoursRes.data ?? []
   }
 
   // ── Treatment CRUD ───────────────────────────────────────────────────────────
@@ -82,7 +110,6 @@ export function StudioAdmin({ user }) {
   async function saveLocation(data, id = null) {
     const name = (data.name ?? '').trim()
     if (!name) { showToast('Name ist erforderlich.', 'error'); return }
-    // derive slug from slug field if provided, otherwise from name
     const slug = (data.slug?.trim() || name).toLowerCase().replace(/\s+/g, '-')
     const payload = {
       name,
@@ -108,6 +135,49 @@ export function StudioAdmin({ user }) {
     showToast('Standort gelöscht.')
     await loadData()
     rerender()
+  }
+
+  // ── CSV helpers ───────────────────────────────────────────────────────────────
+
+  function triggerDownload(csvContent, filename) {
+    const BOM  = '﻿'
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = filename
+    document.body.appendChild(a); a.click()
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 100)
+  }
+
+  function downloadRevenueCsv() {
+    const mm     = String(reportMonth).padStart(2, '0')
+    const header = 'Datum;Mitarbeiter;Behandlung;Preis (€);Upsell (€);Trinkgeld (€);Zahlungsart;Status'
+    const rows   = reportLogs.map(l => {
+      const date   = new Date(l.created_at).toLocaleDateString('de-DE')
+      const emp    = (l.employee?.full_name ?? '–').replace(/;/g, ',')
+      const treat  = (l.treatment?.name    ?? '–').replace(/;/g, ',')
+      const price  = Number(l.revenue      ?? 0).toFixed(2).replace('.', ',')
+      const upsell = Number(l.upsell_amount ?? 0).toFixed(2).replace('.', ',')
+      const tip    = Number(l.tip           ?? 0).toFixed(2).replace('.', ',')
+      const method = l.payment_method ?? '–'
+      const status = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'NO-SHOW' : 'OK'
+      return `${date};${emp};${treat};${price};${upsell};${tip};${method};${status}`
+    })
+    triggerDownload([header, ...rows].join('\n'), `umsatz_${reportYear}_${mm}.csv`)
+  }
+
+  function downloadHoursCsv() {
+    const mm     = String(reportMonth).padStart(2, '0')
+    const header = 'Datum;Mitarbeiter;Arbeitsstunden;Pause (Min);Netto-Stunden'
+    const rows   = reportHours.map(h => {
+      const date   = new Date(h.date + 'T12:00:00').toLocaleDateString('de-DE')
+      const emp    = (h.employee?.full_name ?? '–').replace(/;/g, ',')
+      const worked = Number(h.hours_worked  ?? 0).toFixed(2).replace('.', ',')
+      const pause  = Number(h.break_minutes ?? 0)
+      const net    = Math.max(0, Number(h.hours_worked ?? 0) - Number(h.break_minutes ?? 0) / 60).toFixed(2).replace('.', ',')
+      return `${date};${emp};${worked};${pause};${net}`
+    })
+    triggerDownload([header, ...rows].join('\n'), `stunden_${reportYear}_${mm}.csv`)
   }
 
   // ── HTML ──────────────────────────────────────────────────────────────────────
@@ -185,15 +255,18 @@ export function StudioAdmin({ user }) {
     return `
       <div class="page-header">
         <h2>Studio-Admin</h2>
-        <p style="color:var(--text-light);font-size:0.875rem">Behandlungen & Standorte verwalten</p>
+        <p style="color:var(--text-light);font-size:0.875rem">Behandlungen, Standorte & Monatsberichte</p>
       </div>
 
       <div class="location-tabs" style="margin-bottom:24px">
         <button class="location-tab ${activeTab === 'treatments' ? 'active' : ''}" data-tab="treatments">Behandlungen</button>
         <button class="location-tab ${activeTab === 'locations'  ? 'active' : ''}" data-tab="locations">Standorte</button>
+        <button class="location-tab ${activeTab === 'reports'    ? 'active' : ''}" data-tab="reports">Monatsberichte</button>
       </div>
 
-      ${activeTab === 'treatments' ? buildTreatmentsPanel() : buildLocationsPanel()}
+      ${activeTab === 'treatments' ? buildTreatmentsPanel()
+      : activeTab === 'locations'  ? buildLocationsPanel()
+      : buildReportsPanel()}
     `
   }
 
@@ -296,13 +369,132 @@ export function StudioAdmin({ user }) {
     `
   }
 
+  function buildReportsPanel() {
+    const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
+    const curYear = new Date().getFullYear()
+    const years   = [curYear, curYear - 1, curYear - 2]
+
+    const activeLogs = reportLogs.filter(l => !l.is_cancelled)
+    const realLogs   = activeLogs.filter(l => !l.is_no_show)
+    const noShowLogs = activeLogs.filter(l => l.is_no_show)
+
+    const methods      = ['bar', 'ec', 'paypal', 'online']
+    const methodLabels = { bar: 'Bar', ec: 'EC-Karte', paypal: 'PayPal', online: 'Online' }
+
+    const revenueByMethod = {}
+    methods.forEach(m => {
+      revenueByMethod[m] = realLogs
+        .filter(l => (l.payment_method ?? 'bar') === m)
+        .reduce((s, l) => s + Number(l.revenue ?? 0) + Number(l.upsell_amount ?? 0), 0)
+    })
+    const totalRevenue = methods.reduce((s, m) => s + revenueByMethod[m], 0)
+    const totalTips    = realLogs.reduce((s, l) => s + Number(l.tip ?? 0), 0)
+    const noShowLoss   = noShowLogs.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
+
+    const netWorkMins  = reportHours.reduce((s, h) => s + Math.max(0, Number(h.hours_worked ?? 0) * 60 - Number(h.break_minutes ?? 0)), 0)
+    const netWorkHours = (netWorkMins / 60).toFixed(1)
+    const treatMins    = realLogs.reduce((s, l) => s + Number(l.treatment?.duration ?? 60), 0)
+    const avgUtil      = netWorkMins > 0 ? Math.round((treatMins / netWorkMins) * 100) : 0
+    const utilColor    = avgUtil >= 80 ? '#27AE60' : avgUtil >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+
+    const hasData = reportLogs.length > 0 || reportHours.length > 0
+
+    return `
+      <!-- Selector row -->
+      <div class="card" style="margin-bottom:20px">
+        <div style="padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <select id="report-month" style="${inputStyle};width:auto;min-width:120px">
+            ${MONTHS.map((m, i) => `<option value="${i+1}" ${reportMonth === i+1 ? 'selected' : ''}>${m}</option>`).join('')}
+          </select>
+          <select id="report-year" style="${inputStyle};width:auto">
+            ${years.map(y => `<option value="${y}" ${reportYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+          </select>
+          <button id="load-report-btn" class="btn btn-accent btn-sm">Laden</button>
+
+          ${hasData ? `
+            <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+              <button id="export-revenue-btn" class="btn btn-ghost btn-sm">📥 Umsatz-Export (.CSV)</button>
+              <button id="export-hours-btn"   class="btn btn-ghost btn-sm">📋 Stundenkonto-Export (.CSV)</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+
+      ${!hasData ? `
+        <div class="empty-state" style="padding:40px 20px">
+          <span class="empty-state-icon">📂</span>
+          <p>Keine Daten für ${MONTHS[reportMonth - 1]} ${reportYear}.</p>
+        </div>
+      ` : `
+
+        <!-- KPI row -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
+          ${[
+            { label: 'Gesamtumsatz',   value: fmt(totalRevenue),      color: 'var(--aubergine)' },
+            { label: 'Trinkgeld',      value: fmt(totalTips),         color: '#27AE60'          },
+            { label: 'No-Show-Verlust',value: fmt(noShowLoss),        color: 'var(--terracotta)'},
+            { label: 'Netto-Stunden',  value: netWorkHours + ' Std.', color: 'var(--aubergine)' },
+            { label: 'Ø Auslastung',   value: avgUtil + '%',          color: utilColor          },
+          ].map(k => `
+            <div class="card" style="text-align:center;padding:16px">
+              <div style="font-size:0.7rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">${k.label}</div>
+              <div style="font-size:1.35rem;font-weight:700;color:${k.color}">${k.value}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- Revenue by payment method -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><h4>Umsatz nach Zahlungsart</h4></div>
+          <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+            ${methods.map(m => `
+              <div style="text-align:center;padding:12px 8px;background:var(--cream-dark);border-radius:var(--radius-sm)">
+                <div style="font-size:0.75rem;color:var(--text-mid);margin-bottom:4px">${methodLabels[m]}</div>
+                <div style="font-weight:700;color:var(--aubergine)">${fmt(revenueByMethod[m])}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Summary counts -->
+        <div class="card">
+          <div class="card-header"><h4>Übersicht ${MONTHS[reportMonth - 1]} ${reportYear}</h4></div>
+          <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+            ${[
+              { label: 'Buchungen (aktiv)',  value: realLogs.length },
+              { label: 'No-Shows',           value: noShowLogs.length },
+              { label: 'Stornierungen',      value: reportLogs.filter(l => l.is_cancelled).length },
+              { label: 'Zeiteinträge Team',  value: reportHours.length },
+            ].map(r => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--cream-dark);border-radius:var(--radius-sm)">
+                <span style="font-size:0.82rem;color:var(--text-mid)">${r.label}</span>
+                <strong style="color:var(--aubergine)">${r.value}</strong>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `}
+    `
+  }
+
+  // ── Events ────────────────────────────────────────────────────────────────────
+
   function attachEvents() {
     // Tab switching
     container.querySelectorAll('.location-tab[data-tab]').forEach(btn => {
-      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; editingTreatment = undefined; editingLocation = undefined; rerender() })
+      btn.addEventListener('click', async () => {
+        activeTab        = btn.dataset.tab
+        editingTreatment = undefined
+        editingLocation  = undefined
+        if (activeTab === 'reports') {
+          container.innerHTML = buildHTML()
+          await loadReportData()
+        }
+        rerender()
+      })
     })
 
-    // Treatment list (header button + empty-state CTA both open the form)
+    // Treatment CRUD
     container.querySelector('#new-treatment-btn')?.addEventListener('click', () => { editingTreatment = null; rerender() })
     container.querySelector('#new-treatment-cta')?.addEventListener('click', () => { editingTreatment = null; rerender() })
     container.querySelector('#cancel-treatment-form')?.addEventListener('click', () => { editingTreatment = undefined; rerender() })
@@ -325,7 +517,7 @@ export function StudioAdmin({ user }) {
       }, editingTreatment?.id)
     })
 
-    // Location list (header button + empty-state CTA)
+    // Location CRUD
     container.querySelector('#new-location-btn')?.addEventListener('click', () => { editingLocation = null; rerender() })
     container.querySelector('#new-location-cta')?.addEventListener('click', () => { editingLocation = null; rerender() })
     container.querySelector('#cancel-location-form')?.addEventListener('click', () => { editingLocation = undefined; rerender() })
@@ -342,6 +534,20 @@ export function StudioAdmin({ user }) {
         daily_revenue_target: container.querySelector('#loc-target').value,
       }, editingLocation?.id)
     })
+
+    // Reports tab
+    container.querySelector('#load-report-btn')?.addEventListener('click', async () => {
+      const mEl = container.querySelector('#report-month')
+      const yEl = container.querySelector('#report-year')
+      if (mEl) reportMonth = parseInt(mEl.value, 10)
+      if (yEl) reportYear  = parseInt(yEl.value, 10)
+      const btn = container.querySelector('#load-report-btn')
+      if (btn) { btn.disabled = true; btn.textContent = 'Lädt…' }
+      await loadReportData()
+      rerender()
+    })
+    container.querySelector('#export-revenue-btn')?.addEventListener('click', downloadRevenueCsv)
+    container.querySelector('#export-hours-btn')?.addEventListener('click',   downloadHoursCsv)
   }
 
   function rerender() {
