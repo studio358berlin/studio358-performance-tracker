@@ -70,14 +70,16 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   function todaySummary() {
-    const real    = todayLogs.filter(l => !l.is_no_show)
-    const noShows = todayLogs.filter(l => l.is_no_show)
+    const active  = todayLogs.filter(l => !l.is_cancelled)
+    const real    = active.filter(l => !l.is_no_show)
+    const noShows = active.filter(l => l.is_no_show)
     const revenue = real.reduce((s, l) => s + Number(l.revenue), 0)
-    const tips    = todayLogs.reduce((s, l) => s + Number(l.tip), 0)
-    return { total: todayLogs.length, noShows: noShows.length, revenue, tips }
+    const tips    = active.reduce((s, l) => s + Number(l.tip), 0)
+    return { total: active.length, noShows: noShows.length, revenue, tips }
   }
 
   function canEdit(log) {
+    if (log.is_cancelled) return false
     const logDate = new Date(log.created_at).toISOString().slice(0, 10)
     const today   = new Date().toISOString().slice(0, 10)
     if (logDate !== today) return false
@@ -142,18 +144,21 @@ export function DailyCheckout({ user, onNavigate }) {
     return true
   }
 
-  async function deleteLog(logId) {
+  async function cancelLog(logId) {
     const log = todayLogs.find(l => l.id === logId)
     if (!log || !canEdit(log)) {
-      showToast('Nur am selben Tag löschbar.', 'error')
+      showToast('Nur am selben Tag stornierbar.', 'error')
       return
     }
-    if (!confirm('Eintrag wirklich löschen?')) return
+    if (!confirm('Eintrag wirklich stornieren?\n\nDer Eintrag bleibt sichtbar und wird als storniert markiert.')) return
 
-    const { error } = await supabase.from('daily_revenue_logs').delete().eq('id', logId)
+    const { error } = await supabase
+      .from('daily_revenue_logs')
+      .update({ is_cancelled: true, cancelled_at: new Date().toISOString() })
+      .eq('id', logId)
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-    showToast('Eintrag gelöscht.')
-    todayLogs = todayLogs.filter(l => l.id !== logId)
+    showToast('Eintrag storniert.')
+    todayLogs = todayLogs.map(l => l.id === logId ? { ...l, is_cancelled: true } : l)
     rerender()
     await refreshLogs()
   }
@@ -276,7 +281,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
         <!-- Footer -->
         <div style="padding:0 20px 20px;display:flex;gap:8px">
-          ${isEdit ? `<button id="modal-delete" class="btn" style="background:var(--terracotta);color:#fff;flex:0 0 auto">Löschen</button>` : ''}
+          ${isEdit ? `<button id="modal-delete" class="btn" style="background:var(--terracotta);color:#fff;flex:0 0 auto">Stornieren</button>` : ''}
           <button id="modal-save" class="btn btn-accent" style="flex:1">Speichern</button>
         </div>
       </div>
@@ -360,7 +365,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
     overlay.querySelector('#modal-delete')?.addEventListener('click', () => {
       overlay.remove()
-      deleteLog(existingLog.id)
+      cancelLog(existingLog.id)
     })
   }
 
@@ -375,12 +380,12 @@ export function DailyCheckout({ user, onNavigate }) {
       { key: 'online', label: 'Online vorab' },
     ]
     const byPayment = {}
-    for (const log of todayLogs.filter(l => !l.is_no_show)) {
+    for (const log of todayLogs.filter(l => !l.is_no_show && !l.is_cancelled)) {
       const pm = log.payment_method ?? 'bar'
       byPayment[pm] = (byPayment[pm] ?? 0) + Number(log.revenue)
     }
     const noShowLoss = todayLogs
-      .filter(l => l.is_no_show)
+      .filter(l => l.is_no_show && !l.is_cancelled)
       .reduce((s, l) => s + Number(l.treatment?.price ?? 0), 0)
 
     return `
@@ -407,7 +412,7 @@ export function DailyCheckout({ user, onNavigate }) {
   function buildTeamStatus() {
     if (!isManager) return ''
     const byEmp = {}
-    for (const log of todayLogs) {
+    for (const log of todayLogs.filter(l => !l.is_cancelled)) {
       if (!log.employee_id) continue
       if (!byEmp[log.employee_id]) {
         byEmp[log.employee_id] = { name: log.employee?.full_name ?? '–', revenue: 0, tips: 0, minutes: 0, counts: {} }
@@ -541,26 +546,31 @@ export function DailyCheckout({ user, onNavigate }) {
                 </tr>
               </thead>
               <tbody>
-                ${todayLogs.map(log => `
-                  <tr style="${log.is_no_show ? 'opacity:0.5' : ''}">
-                    <td style="padding:5px 10px;color:var(--text-mid);white-space:nowrap">${new Date(log.created_at).toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' })}</td>
-                    ${isManager ? `<td style="padding:5px 10px;font-size:0.78rem;color:var(--text-mid)">${log.employee?.full_name ?? '–'}</td>` : ''}
-                    <td style="padding:5px 10px">
+                ${todayLogs.map(log => {
+                  const cancelled = log.is_cancelled === true
+                  const rowOpacity = cancelled ? 'opacity:0.6' : log.is_no_show ? 'opacity:0.5' : ''
+                  const strikeStyle = cancelled ? 'text-decoration:line-through;color:var(--text-light)' : ''
+                  return `
+                  <tr style="${rowOpacity}">
+                    <td style="padding:5px 10px;white-space:nowrap;${strikeStyle || 'color:var(--text-mid)'}">${new Date(log.created_at).toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' })}</td>
+                    ${isManager ? `<td style="padding:5px 10px;font-size:0.78rem;${strikeStyle || 'color:var(--text-mid)'}">${log.employee?.full_name ?? '–'}</td>` : ''}
+                    <td style="padding:5px 10px;${strikeStyle}">
                       ${log.treatment?.name ?? '–'}
-                      ${log.is_no_show ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 4px;margin-left:3px">NS</span>` : ''}
+                      ${log.is_no_show && !cancelled ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 4px;margin-left:3px">NS</span>` : ''}
+                      ${cancelled ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;font-style:normal;font-weight:600">Storniert</span>` : ''}
                     </td>
-                    <td style="padding:5px 10px;font-weight:600;color:${log.is_no_show ? 'var(--text-light)' : 'var(--aubergine)'}">${fmt(log.revenue)}</td>
-                    <td style="padding:5px 10px;color:var(--gold)">${Number(log.tip) > 0 ? fmt(log.tip) : '–'}</td>
+                    <td style="padding:5px 10px;font-weight:600;${cancelled ? strikeStyle : log.is_no_show ? 'color:var(--text-light)' : 'color:var(--aubergine)'}">${fmt(log.revenue)}</td>
+                    <td style="padding:5px 10px;${cancelled ? strikeStyle : 'color:var(--gold)'}">${Number(log.tip) > 0 ? fmt(log.tip) : '–'}</td>
                     <td style="padding:5px 10px">
                       ${canEdit(log) ? `
                         <div style="display:flex;gap:3px">
                           <button class="btn btn-ghost btn-sm btn-edit-log" data-id="${log.id}" style="font-size:0.72rem;padding:3px 6px">✏</button>
-                          <button class="btn btn-sm btn-delete-log" data-id="${log.id}" style="font-size:0.72rem;padding:3px 6px;background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">🗑</button>
+                          <button class="btn btn-sm btn-cancel-log" data-id="${log.id}" style="font-size:0.72rem;padding:3px 6px;background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">🗑</button>
                         </div>
                       ` : ''}
                     </td>
                   </tr>
-                `).join('')}
+                `}).join('')}
               </tbody>
             </table>
           </div>
@@ -597,8 +607,8 @@ export function DailyCheckout({ user, onNavigate }) {
       })
     })
 
-    container.querySelectorAll('.btn-delete-log[data-id]').forEach(btn => {
-      btn.addEventListener('click', () => deleteLog(btn.dataset.id))
+    container.querySelectorAll('.btn-cancel-log[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => cancelLog(btn.dataset.id))
     })
 
     // Live utilization recalculation when hours input changes

@@ -54,6 +54,11 @@ ALTER TABLE daily_revenue_logs
   ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'bar'
     CHECK (payment_method IN ('bar', 'ec', 'paypal', 'online'));
 
+-- Cancellation columns
+ALTER TABLE daily_revenue_logs
+  ADD COLUMN IF NOT EXISTS is_cancelled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
 -- Manager insert policy: allow inserting on behalf of any employee
 DROP POLICY IF EXISTS "revenue_logs_manager_insert" ON daily_revenue_logs;
 CREATE POLICY "revenue_logs_manager_insert" ON daily_revenue_logs
