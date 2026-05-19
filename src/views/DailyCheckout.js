@@ -3,31 +3,36 @@ import { supabase } from '../lib/supabase.js'
 export function DailyCheckout({ user, onNavigate }) {
   const isManager = user?.profile?.is_manager || user?.profile?.role === 'manager'
 
-  let locations   = []
-  let treatments  = []
-  let todayLogs   = []
+  let locations          = []
+  let treatments         = []
+  let employees          = []
+  let todayLogs          = []
   let selectedLocationId = user?.profile?.location_id ?? null
-  let container   = null
-  let editingLog  = null  // log being edited
+  let container          = null
 
-  // ── Data loading ────────────────────────────────────────────────────────────
+  // ── Data loading ──────────────────────────────────────────────────────────────
 
   async function loadData() {
-    const [locRes, treatRes, logRes] = await Promise.all([
+    const baseQueries = [
       supabase.from('locations').select('*').order('name'),
       supabase.from('treatments').select('*').eq('active', true).order('name'),
       fetchTodayLogs(),
-    ])
-    locations  = locRes.data  ?? []
+    ]
+
+    const [locRes, treatRes, logRes, empRes] = await Promise.all(
+      isManager
+        ? [...baseQueries, supabase.from('profiles').select('id,full_name').eq('role', 'employee').order('full_name')]
+        : baseQueries
+    )
+    locations  = locRes.data   ?? []
     treatments = treatRes.data ?? []
     todayLogs  = logRes
+    if (isManager) employees = empRes?.data ?? []
 
-    // Default: employee uses their assigned location; manager uses first location
     if (!selectedLocationId) {
       if (isManager) {
         selectedLocationId = locations[0]?.id ?? null
       } else {
-        // Employee: match their profile.location slug to locations table
         const slug = user?.profile?.location
         selectedLocationId = locations.find(l => l.slug === slug)?.id ?? locations[0]?.id ?? null
       }
@@ -35,7 +40,7 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function fetchTodayLogs() {
-    const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    const today = new Date().toISOString().slice(0, 10)
     let query = supabase
       .from('daily_revenue_logs')
       .select('*, treatment:treatment_id(name, price), employee:employee_id(full_name)')
@@ -53,18 +58,22 @@ export function DailyCheckout({ user, onNavigate }) {
     return data ?? []
   }
 
-  // ── Computed helpers ─────────────────────────────────────────────────────────
+  // ── Computed helpers ──────────────────────────────────────────────────────────
 
   function locationTreatments() {
-    if (!selectedLocationId) return treatments
-    return treatments.filter(t => !t.location_id || t.location_id === selectedLocationId)
+    let result = selectedLocationId
+      ? treatments.filter(t => !t.location_id || t.location_id === selectedLocationId)
+      : treatments
+    // deduplicate by id — prevents duplicate DB rows from rendering multiple times
+    const seen = new Set()
+    return result.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true })
   }
 
   function todaySummary() {
-    const real     = todayLogs.filter(l => !l.is_no_show)
-    const noShows  = todayLogs.filter(l => l.is_no_show)
-    const revenue  = real.reduce((s, l) => s + Number(l.revenue), 0)
-    const tips     = todayLogs.reduce((s, l) => s + Number(l.tip), 0)
+    const real    = todayLogs.filter(l => !l.is_no_show)
+    const noShows = todayLogs.filter(l => l.is_no_show)
+    const revenue = real.reduce((s, l) => s + Number(l.revenue), 0)
+    const tips    = todayLogs.reduce((s, l) => s + Number(l.tip), 0)
     return { total: todayLogs.length, noShows: noShows.length, revenue, tips }
   }
 
@@ -76,29 +85,30 @@ export function DailyCheckout({ user, onNavigate }) {
     return log.employee_id === user.id
   }
 
-  // ── Save / delete ─────────────────────────────────────────────────────────
+  // ── Save / delete ─────────────────────────────────────────────────────────────
 
   async function saveLog(data, logId = null) {
-    const treatment = treatments.find(t => t.id === data.treatment_id)
-    const isNoShow  = !!data.is_no_show
-    const upsell    = isNoShow ? 0 : Math.max(0, Number(data.upsell_amount) || 0)
-    const tip       = isNoShow ? 0 : Math.max(0, Number(data.tip) || 0)
-    const revenue   = isNoShow ? 0 : (Number(treatment?.price ?? 0) + upsell)
+    const treatment  = treatments.find(t => t.id === data.treatment_id)
+    const isNoShow   = !!data.is_no_show
+    const upsell     = isNoShow ? 0 : Math.max(0, Number(data.upsell_amount) || 0)
+    const tip        = isNoShow ? 0 : Math.max(0, Number(data.tip) || 0)
+    const revenue    = isNoShow ? 0 : (Number(treatment?.price ?? 0) + upsell)
+    const employeeId = data.employee_id ?? user.id
 
     const payload = {
-      employee_id:   user.id,
-      location_id:   selectedLocationId,
-      treatment_id:  data.treatment_id,
+      employee_id:    employeeId,
+      location_id:    selectedLocationId,
+      treatment_id:   data.treatment_id,
       revenue,
-      upsell_amount: upsell,
+      upsell_amount:  upsell,
       tip,
-      is_no_show:    isNoShow,
-      created_by:    user.id,
+      is_no_show:     isNoShow,
+      payment_method: data.payment_method ?? 'bar',
+      created_by:     user.id,
     }
 
     let error
     if (logId) {
-      // Edit: check same-day client-side too
       const existing = todayLogs.find(l => l.id === logId)
       if (existing && !canEdit(existing)) {
         showToast('Nur am selben Tag editierbar.', 'error')
@@ -109,8 +119,12 @@ export function DailyCheckout({ user, onNavigate }) {
     } else {
       const res = await supabase.from('daily_revenue_logs').insert(payload).select().single()
       if (!res.error) {
-        // Optimistic: add to list immediately (will be overwritten by full reload)
-        const enriched = { ...res.data, treatment: { name: treatment?.name, price: treatment?.price }, employee: { full_name: user.profile?.full_name } }
+        const emp = employees.find(e => e.id === employeeId) ?? { full_name: user.profile?.full_name }
+        const enriched = {
+          ...res.data,
+          treatment: { name: treatment?.name, price: treatment?.price },
+          employee:  { full_name: emp.full_name },
+        }
         todayLogs = [enriched, ...todayLogs]
         rerender()
       }
@@ -149,59 +163,95 @@ export function DailyCheckout({ user, onNavigate }) {
     rerender()
   }
 
-  // ── Modal ────────────────────────────────────────────────────────────────────
+  // ── Modal ─────────────────────────────────────────────────────────────────────
+
+  const PAYMENT_METHODS = [
+    { value: 'bar',    label: 'Bar'          },
+    { value: 'ec',     label: 'EC-Karte'     },
+    { value: 'paypal', label: 'PayPal'        },
+    { value: 'online', label: 'Online vorab' },
+  ]
 
   function openModal(treatment, existingLog = null) {
-    const modal   = document.createElement('div')
-    modal.className = 'modal-backdrop'
+    const overlay = document.createElement('div')
+    // Explicit inline style — guarantees centering and overrides bottom-nav z-index (1000)
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:1100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);padding:16px'
 
     const isEdit   = !!existingLog
     const isNS     = existingLog?.is_no_show ?? false
     const upsell   = existingLog?.upsell_amount ?? 0
     const tip      = existingLog?.tip ?? 0
     const price    = treatment?.price ?? 0
+    const curPay   = existingLog?.payment_method ?? 'bar'
+    const curEmpId = existingLog?.employee_id ?? user.id
 
-    modal.innerHTML = `
-      <div class="modal" style="max-width:380px">
-        <div class="modal-header">
-          <h3>${treatment?.name ?? 'Behandlung'}</h3>
-          <button class="modal-close" aria-label="Schließen">✕</button>
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:420px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+
+        <!-- Header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${treatment?.name ?? 'Behandlung'}</h3>
+          <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
         </div>
 
-        <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
-            <span style="font-size:0.85rem;color:var(--text-mid)">Behandlungspreis</span>
-            <strong style="color:var(--aubergine);font-size:1.1rem">${fmt(price)}</strong>
+        <!-- Price badge -->
+        <div style="margin:14px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
+          <span style="font-size:0.85rem;color:var(--text-mid)">Behandlungspreis</span>
+          <strong style="color:var(--aubergine);font-size:1.05rem">${fmt(price)}</strong>
+        </div>
+
+        <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px">
+
+          ${isManager && employees.length ? `
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Mitarbeiter zuordnen
+            <select id="modal-employee" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white)">
+              ${employees.map(e => `<option value="${e.id}" ${e.id === curEmpId ? 'selected' : ''}>${e.full_name}</option>`).join('')}
+            </select>
+          </label>
+          ` : ''}
+
+          <!-- Payment method -->
+          <div>
+            <div style="font-size:0.85rem;color:var(--text-mid);margin-bottom:6px">Zahlungsart</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${PAYMENT_METHODS.map(({ value, label }) => {
+                const active = curPay === value
+                return `<button type="button" class="pay-btn" data-pay="${value}"
+                  style="padding:7px 12px;border:2px solid ${active ? 'var(--aubergine)' : 'var(--cream-dark)'};border-radius:var(--radius-sm);background:${active ? 'var(--cream)' : 'var(--white)'};font-size:0.82rem;cursor:pointer;font-weight:${active ? '600' : '400'};color:${active ? 'var(--aubergine)' : 'var(--text-mid)'};transition:all 0.15s">
+                  ${label}
+                </button>`
+              }).join('')}
+            </div>
           </div>
 
+          <!-- Upsell -->
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
             Zusatzverkauf (€)
             <input id="modal-upsell" type="number" min="0" step="0.01" value="${upsell}"
-              style="padding:10px;border:1px solid var(--cream-darker, var(--cream-dark));border-radius:var(--radius-sm);font-size:1rem;${isNS ? 'opacity:0.4;pointer-events:none' : ''}">
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;${isNS ? 'opacity:0.4;pointer-events:none' : ''}">
           </label>
 
+          <!-- Tip -->
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
             Trinkgeld (€)
             <input id="modal-tip" type="number" min="0" step="0.01" value="${tip}"
-              style="padding:10px;border:1px solid var(--cream-darker, var(--cream-dark));border-radius:var(--radius-sm);font-size:1rem;${isNS ? 'opacity:0.4;pointer-events:none' : ''}">
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;${isNS ? 'opacity:0.4;pointer-events:none' : ''}">
           </label>
 
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem;padding:10px;background:${isNS ? 'rgba(181,87,58,0.08)' : 'transparent'};border-radius:var(--radius-sm);transition:background 0.15s">
+          <!-- No-show -->
+          <label id="noshow-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9rem;padding:10px;background:${isNS ? 'rgba(181,87,58,0.08)' : 'transparent'};border-radius:var(--radius-sm);transition:background 0.15s">
             <input id="modal-noshow" type="checkbox" ${isNS ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--terracotta)">
             No-Show
           </label>
 
-          ${isEdit ? `
-            <div id="modal-revenue-preview" style="font-size:0.8rem;color:var(--text-light);text-align:right">
-              Umsatz: <strong id="modal-rev-val">${fmt(existingLog.revenue)}</strong>
-            </div>
-          ` : `
-            <div id="modal-revenue-preview" style="font-size:0.8rem;color:var(--text-light);text-align:right">
-              Umsatz: <strong id="modal-rev-val">${fmt(price)}</strong>
-            </div>
-          `}
+          <!-- Revenue preview -->
+          <div style="font-size:0.8rem;color:var(--text-light);text-align:right">
+            Umsatz: <strong id="modal-rev-val">${fmt(isEdit ? existingLog.revenue : price)}</strong>
+          </div>
         </div>
 
+        <!-- Footer -->
         <div style="padding:0 20px 20px;display:flex;gap:8px">
           ${isEdit ? `<button id="modal-delete" class="btn" style="background:var(--terracotta);color:#fff;flex:0 0 auto">Löschen</button>` : ''}
           <button id="modal-save" class="btn btn-accent" style="flex:1">Speichern</button>
@@ -209,54 +259,79 @@ export function DailyCheckout({ user, onNavigate }) {
       </div>
     `
 
-    document.body.appendChild(modal)
+    document.body.appendChild(overlay)
 
-    const upsellInput  = modal.querySelector('#modal-upsell')
-    const tipInput     = modal.querySelector('#modal-tip')
-    const nsCheckbox   = modal.querySelector('#modal-noshow')
-    const revVal       = modal.querySelector('#modal-rev-val')
+    const upsellInput  = overlay.querySelector('#modal-upsell')
+    const tipInput     = overlay.querySelector('#modal-tip')
+    const nsCheckbox   = overlay.querySelector('#modal-noshow')
+    const noshowLabel  = overlay.querySelector('#noshow-label')
+    const revVal       = overlay.querySelector('#modal-rev-val')
+
+    // Payment button toggle
+    let selectedPayment = curPay
+    overlay.querySelectorAll('.pay-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedPayment = btn.dataset.pay
+        overlay.querySelectorAll('.pay-btn').forEach(b => {
+          const on = b.dataset.pay === selectedPayment
+          b.style.borderColor = on ? 'var(--aubergine)' : 'var(--cream-dark)'
+          b.style.background  = on ? 'var(--cream)'     : 'var(--white)'
+          b.style.fontWeight  = on ? '600'              : '400'
+          b.style.color       = on ? 'var(--aubergine)' : 'var(--text-mid)'
+        })
+      })
+    })
 
     function updatePreview() {
-      const ns = nsCheckbox.checked
-      const u  = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
-      const rev = ns ? 0 : (price + u)
-      revVal.textContent = fmt(rev)
-      upsellInput.style.opacity = ns ? '0.4' : '1'
+      const ns  = nsCheckbox.checked
+      const u   = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
+      revVal.textContent = fmt(ns ? 0 : (price + u))
+      upsellInput.style.opacity      = ns ? '0.4' : '1'
       upsellInput.style.pointerEvents = ns ? 'none' : ''
-      tipInput.style.opacity = ns ? '0.4' : '1'
-      tipInput.style.pointerEvents = ns ? 'none' : ''
+      tipInput.style.opacity         = ns ? '0.4' : '1'
+      tipInput.style.pointerEvents   = ns ? 'none' : ''
+      noshowLabel.style.background   = ns ? 'rgba(181,87,58,0.08)' : 'transparent'
       if (ns) { upsellInput.value = '0'; tipInput.value = '0' }
     }
 
     nsCheckbox.addEventListener('change', updatePreview)
     upsellInput.addEventListener('input', updatePreview)
 
-    modal.querySelector('.modal-close').addEventListener('click', () => modal.remove())
-    modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
+    overlay.querySelector('#modal-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
-    modal.querySelector('#modal-save').addEventListener('click', async () => {
-      const ns = nsCheckbox.checked
-      const u  = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
-      const t  = ns ? 0 : Math.max(0, parseFloat(tipInput.value) || 0)
+    overlay.querySelector('#modal-save').addEventListener('click', async () => {
+      const ns    = nsCheckbox.checked
+      const u     = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
+      const t     = ns ? 0 : Math.max(0, parseFloat(tipInput.value) || 0)
+      const empId = overlay.querySelector('#modal-employee')?.value ?? user.id
 
       if (u < 0 || t < 0) { showToast('Keine negativen Beträge.', 'error'); return }
 
-      const btn = modal.querySelector('#modal-save')
-      btn.disabled = true
-      btn.textContent = 'Speichern...'
+      const saveBtn = overlay.querySelector('#modal-save')
+      saveBtn.disabled = true
+      saveBtn.textContent = 'Speichern...'
 
-      const ok = await saveLog({ treatment_id: treatment?.id, upsell_amount: u, tip: t, is_no_show: ns }, existingLog?.id)
-      if (ok) modal.remove()
-      else { btn.disabled = false; btn.textContent = 'Speichern' }
+      const ok = await saveLog({
+        treatment_id:   treatment?.id,
+        upsell_amount:  u,
+        tip:            t,
+        is_no_show:     ns,
+        payment_method: selectedPayment,
+        employee_id:    empId,
+      }, existingLog?.id)
+
+      if (ok) overlay.remove()
+      else { saveBtn.disabled = false; saveBtn.textContent = 'Speichern' }
     })
 
-    modal.querySelector('#modal-delete')?.addEventListener('click', () => {
-      modal.remove()
+    overlay.querySelector('#modal-delete')?.addEventListener('click', () => {
+      overlay.remove()
       deleteLog(existingLog.id)
     })
   }
 
-  // ── HTML builders ────────────────────────────────────────────────────────────
+  // ── HTML builders ─────────────────────────────────────────────────────────────
 
   function buildHTML() {
     const summary    = todaySummary()
@@ -279,7 +354,6 @@ export function DailyCheckout({ user, onNavigate }) {
         </div>
       ` : ''}
 
-      <!-- Summary strip -->
       <div class="stat-grid" style="margin-bottom:24px">
         <div class="stat-card">
           <div class="stat-label">Einträge heute</div>
@@ -298,16 +372,15 @@ export function DailyCheckout({ user, onNavigate }) {
         </div>
       </div>
 
-      <!-- Treatment quick-tap buttons -->
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Behandlung erfassen</h4></div>
         ${treatsHere.length ? `
-          <div style="display:flex;flex-wrap:wrap;gap:10px;padding:4px 0">
+          <div class="treatment-grid">
             ${treatsHere.map(t => `
               <button class="btn-treatment" data-id="${t.id}"
-                style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:14px 18px;border-radius:var(--radius-md);border:2px solid var(--cream-dark);background:var(--white);cursor:pointer;min-width:140px;transition:all 0.15s;text-align:left">
-                <span style="font-weight:600;color:var(--aubergine);font-size:0.95rem">${t.name}</span>
-                <span style="font-size:0.8rem;color:var(--text-mid)">${fmt(t.price)}</span>
+                style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:var(--radius-md);border:2px solid var(--cream-dark);background:var(--white);cursor:pointer;width:100%;transition:all 0.15s;text-align:left">
+                <span style="font-weight:600;color:var(--aubergine);font-size:0.85rem;line-height:1.3">${t.name}</span>
+                <span style="font-size:0.75rem;color:var(--text-mid)">${fmt(t.price)}</span>
               </button>
             `).join('')}
           </div>
@@ -323,7 +396,6 @@ export function DailyCheckout({ user, onNavigate }) {
         `}
       </div>
 
-      <!-- Today's log list -->
       <div class="card">
         <div class="card-header"><h4>Heutige Einträge</h4></div>
         ${todayLogs.length ? `
@@ -352,7 +424,10 @@ export function DailyCheckout({ user, onNavigate }) {
                     <td style="color:var(--gold)">${log.tip > 0 ? fmt(log.tip) : '–'}</td>
                     <td>
                       ${canEdit(log) ? `
-                        <button class="btn btn-ghost btn-sm btn-edit-log" data-id="${log.id}" style="font-size:0.75rem">✏</button>
+                        <div style="display:flex;gap:4px">
+                          <button class="btn btn-ghost btn-sm btn-edit-log" data-id="${log.id}" style="font-size:0.75rem;padding:4px 7px">✏</button>
+                          <button class="btn btn-sm btn-delete-log" data-id="${log.id}" style="font-size:0.75rem;padding:4px 7px;background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">🗑</button>
+                        </div>
                       ` : ''}
                     </td>
                   </tr>
@@ -387,9 +462,14 @@ export function DailyCheckout({ user, onNavigate }) {
       btn.addEventListener('click', () => {
         const log = todayLogs.find(l => l.id === btn.dataset.id)
         if (!log) return
-        const treatment = treatments.find(t => t.id === log.treatment_id) ?? { id: log.treatment_id, name: log.treatment?.name, price: log.treatment?.price ?? 0 }
+        const treatment = treatments.find(t => t.id === log.treatment_id)
+          ?? { id: log.treatment_id, name: log.treatment?.name, price: log.treatment?.price ?? 0 }
         openModal(treatment, log)
       })
+    })
+
+    container.querySelectorAll('.btn-delete-log[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => deleteLog(btn.dataset.id))
     })
   }
 

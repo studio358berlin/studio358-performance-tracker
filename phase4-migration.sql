@@ -49,6 +49,18 @@ CREATE TABLE IF NOT EXISTS daily_revenue_logs (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Payment method column
+ALTER TABLE daily_revenue_logs
+  ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'bar'
+    CHECK (payment_method IN ('bar', 'ec', 'paypal', 'online'));
+
+-- Manager insert policy: allow inserting on behalf of any employee
+DROP POLICY IF EXISTS "revenue_logs_manager_insert" ON daily_revenue_logs;
+CREATE POLICY "revenue_logs_manager_insert" ON daily_revenue_logs
+  FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_manager = TRUE)
+  );
+
 -- No-show constraint: when is_no_show = true, all monetary fields must be 0
 ALTER TABLE daily_revenue_logs
   DROP CONSTRAINT IF EXISTS no_show_zero_amounts;
