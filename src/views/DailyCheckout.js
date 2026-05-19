@@ -174,8 +174,19 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function openModal(treatment, existingLog = null) {
     const overlay = document.createElement('div')
-    // Explicit inline style — guarantees centering and overrides bottom-nav z-index (1000)
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:1100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);padding:16px'
+    // Set each property individually — avoids inset shorthand which fails on older iOS Safari
+    overlay.style.position        = 'fixed'
+    overlay.style.top             = '0'
+    overlay.style.left            = '0'
+    overlay.style.width           = '100vw'
+    overlay.style.height          = '100vh'
+    overlay.style.zIndex          = '9999'
+    overlay.style.display         = 'flex'
+    overlay.style.alignItems      = 'center'
+    overlay.style.justifyContent  = 'center'
+    overlay.style.background      = 'rgba(0,0,0,0.55)'
+    overlay.style.padding         = '16px'
+    overlay.style.boxSizing       = 'border-box'
 
     const isEdit   = !!existingLog
     const isNS     = existingLog?.is_no_show ?? false

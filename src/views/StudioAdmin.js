@@ -63,6 +63,16 @@ export function StudioAdmin({ user }) {
     rerender()
   }
 
+  async function deleteTreatment(id) {
+    const t = treatments.find(x => x.id === id)
+    if (!confirm(`Behandlung "${t?.name ?? ''}" endgültig löschen?\n\nAchtung: Nur möglich wenn keine Umsätze damit gebucht wurden.`)) return
+    const { error } = await supabase.from('treatments').delete().eq('id', id)
+    if (error) { showToast('Löschen nicht möglich: ' + error.message, 'error'); return }
+    showToast('Behandlung gelöscht.')
+    await loadData()
+    rerender()
+  }
+
   // ── Location CRUD ─────────────────────────────────────────────────────────────
 
   async function saveLocation(data, id = null) {
@@ -200,8 +210,11 @@ export function StudioAdmin({ user }) {
                       </span>
                     </td>
                     <td style="white-space:nowrap">
-                      <button class="btn btn-ghost btn-sm btn-edit-treat" data-id="${t.id}" style="margin-right:4px">✏</button>
-                      ${t.active ? `<button class="btn btn-sm btn-deactivate-treat" data-id="${t.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem">Deaktivieren</button>` : ''}
+                      <div style="display:flex;gap:4px;align-items:center">
+                        <button class="btn btn-ghost btn-sm btn-edit-treat" data-id="${t.id}">✏</button>
+                        ${t.active ? `<button class="btn btn-sm btn-deactivate-treat" data-id="${t.id}" style="background:var(--gold);color:#fff;font-size:0.72rem;padding:4px 8px">Deakt.</button>` : ''}
+                        <button class="btn btn-sm btn-delete-treat" data-id="${t.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">Löschen</button>
+                      </div>
                     </td>
                   </tr>
                 `).join('')}
@@ -277,6 +290,9 @@ export function StudioAdmin({ user }) {
     })
     container.querySelectorAll('.btn-deactivate-treat[data-id]').forEach(btn => {
       btn.addEventListener('click', () => deactivateTreatment(btn.dataset.id))
+    })
+    container.querySelectorAll('.btn-delete-treat[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => deleteTreatment(btn.dataset.id))
     })
     container.querySelector('#save-treatment-form')?.addEventListener('click', () => {
       saveTreatment({
