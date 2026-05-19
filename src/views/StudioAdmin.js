@@ -36,12 +36,15 @@ export function StudioAdmin({ user }) {
   // ── Treatment CRUD ───────────────────────────────────────────────────────────
 
   async function saveTreatment(data, id = null) {
+    const name = (data.name ?? '').trim()
+    if (!name) { showToast('Name ist erforderlich.', 'error'); return }
+
     const payload = {
-      name:        data.name.trim(),
-      price:       Math.max(0, parseFloat(data.price) || 0),
-      duration:    Math.max(1, parseInt(data.duration) || 60),
-      location_id: data.location_id || null,
-      active:      data.active !== false,
+      name,
+      price:       Number(Math.max(0, parseFloat(data.price) || 0)),
+      duration:    Number(Math.max(1, parseInt(data.duration, 10) || 60)),
+      location_id: (data.location_id && data.location_id !== '') ? data.location_id : null,
+      active:      data.active === true,
     }
     const { error } = id
       ? await supabase.from('treatments').update(payload).eq('id', id)
@@ -50,7 +53,7 @@ export function StudioAdmin({ user }) {
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast(id ? 'Behandlung aktualisiert.' : 'Behandlung erstellt.')
     await loadData()
-    editingTreatment = null
+    editingTreatment = undefined
     rerender()
   }
 
@@ -88,7 +91,17 @@ export function StudioAdmin({ user }) {
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast(id ? 'Standort aktualisiert.' : 'Standort erstellt.')
     await loadData()
-    editingLocation = null
+    editingLocation = undefined
+    rerender()
+  }
+
+  async function deleteLocation(id) {
+    const l = locations.find(x => x.id === id)
+    if (!confirm(`Standort "${l?.name ?? ''}" endgültig löschen?\n\nNur möglich wenn keine Umsätze oder aktiven Mitarbeiter damit verknüpft sind.`)) return
+    const { error } = await supabase.from('locations').delete().eq('id', id)
+    if (error) { showToast('Löschen nicht möglich: ' + error.message, 'error'); return }
+    showToast('Standort gelöscht.')
+    await loadData()
     rerender()
   }
 
@@ -257,7 +270,10 @@ export function StudioAdmin({ user }) {
                     <td style="color:var(--text-mid);font-size:0.82rem">${l.slug}</td>
                     <td style="font-weight:600">${fmt(l.daily_revenue_target)}</td>
                     <td>
-                      <button class="btn btn-ghost btn-sm btn-edit-loc" data-id="${l.id}">✏ Bearbeiten</button>
+                      <div style="display:flex;gap:4px;align-items:center">
+                        <button class="btn btn-ghost btn-sm btn-edit-loc" data-id="${l.id}">✏ Bearbeiten</button>
+                        <button class="btn btn-sm btn-delete-loc" data-id="${l.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">Löschen</button>
+                      </div>
                     </td>
                   </tr>
                 `).join('')}
@@ -310,6 +326,9 @@ export function StudioAdmin({ user }) {
     container.querySelector('#cancel-location-form')?.addEventListener('click', () => { editingLocation = undefined; rerender() })
     container.querySelectorAll('.btn-edit-loc[data-id]').forEach(btn => {
       btn.addEventListener('click', () => { editingLocation = locations.find(l => l.id === btn.dataset.id); rerender() })
+    })
+    container.querySelectorAll('.btn-delete-loc[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => deleteLocation(btn.dataset.id))
     })
     container.querySelector('#save-location-form')?.addEventListener('click', () => {
       saveLocation({

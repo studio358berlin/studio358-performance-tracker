@@ -201,21 +201,24 @@ export function DailyCheckout({ user, onNavigate }) {
     overlay.innerHTML = `
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:420px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
 
-        <!-- Header: treatment dropdown in edit+manager mode, static name otherwise -->
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0;gap:8px">
-          ${isEdit && isManager ? `
-            <select id="modal-treatment"
-              style="flex:1;padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine);font-weight:600;background:var(--cream)">
-              ${availableTreats.map(t => `<option value="${t.id}" ${t.id === activeTreatment.id ? 'selected' : ''}>${t.name}</option>`).join('')}
-            </select>
-          ` : `
-            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine);flex:1">${activeTreatment.name ?? 'Behandlung'}</h3>
-          `}
-          <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px;flex-shrink:0">✕</button>
+        <!-- Header: always static title -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${isEdit ? 'Eintrag bearbeiten' : (activeTreatment.name ?? 'Behandlung')}</h3>
+          <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
         </div>
 
+        <!-- Treatment switcher (edit + manager): same style as price badge -->
+        ${isEdit && isManager ? `
+        <div style="margin:14px 20px 0">
+          <select id="modal-treatment"
+            style="width:100%;padding:10px 14px;background:var(--cream-dark);border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.92rem;color:var(--aubergine);font-weight:600;cursor:pointer">
+            ${availableTreats.map(t => `<option value="${t.id}" ${t.id === activeTreatment.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+          </select>
+        </div>
+        ` : ''}
+
         <!-- Price badge — id for live update -->
-        <div style="margin:14px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
+        <div style="margin:10px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
           <span style="font-size:0.85rem;color:var(--text-mid)">Behandlungspreis</span>
           <strong id="modal-price-val" style="color:var(--aubergine);font-size:1.05rem">${fmt(activeTreatment.price ?? 0)}</strong>
         </div>
