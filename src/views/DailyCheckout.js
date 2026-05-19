@@ -33,7 +33,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
     if (!selectedLocationId) {
       if (isManager) {
-        selectedLocationId = locations[0]?.id ?? null
+        selectedLocationId = 'all'   // managers default to full overview
       } else {
         const slug = user?.profile?.location
         selectedLocationId = locations.find(l => l.slug === slug)?.id ?? locations[0]?.id ?? null
@@ -67,9 +67,10 @@ export function DailyCheckout({ user, onNavigate }) {
 
     if (!isManager) {
       query = query.eq('employee_id', user.id)
-    } else if (selectedLocationId) {
+    } else if (selectedLocationId && selectedLocationId !== 'all') {
       query = query.eq('location_id', selectedLocationId)
     }
+    // selectedLocationId === 'all' → no location filter → all locations
 
     const { data } = await query
     return data ?? []
@@ -78,7 +79,7 @@ export function DailyCheckout({ user, onNavigate }) {
   // ── Computed helpers ──────────────────────────────────────────────────────────
 
   function locationTreatments() {
-    let result = selectedLocationId
+    let result = (selectedLocationId && selectedLocationId !== 'all')
       ? treatments.filter(t => !t.location_id || t.location_id === selectedLocationId)
       : treatments
     // deduplicate by id — prevents duplicate DB rows from rendering multiple times
@@ -107,6 +108,10 @@ export function DailyCheckout({ user, onNavigate }) {
   // ── Save / delete ─────────────────────────────────────────────────────────────
 
   async function saveLog(data, logId = null) {
+    if (selectedLocationId === 'all') {
+      showToast('Bitte zuerst einen konkreten Standort auswählen.', 'error')
+      return false
+    }
     const treatment  = treatments.find(t => t.id === data.treatment_id)
     const isNoShow   = !!data.is_no_show
     const upsell     = isNoShow ? 0 : Math.max(0, Number(data.upsell_amount) || 0)
@@ -690,7 +695,8 @@ export function DailyCheckout({ user, onNavigate }) {
       ${isManager ? `
         <div style="margin-bottom:16px">
           <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
-          <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:160px">
+          <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:220px">
+            <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte (Gesamtbilanz)</option>
             ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
           </select>
         </div>
@@ -718,7 +724,12 @@ export function DailyCheckout({ user, onNavigate }) {
 
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Behandlung erfassen</h4></div>
-        ${treatsHere.length ? `
+        ${selectedLocationId === 'all' ? `
+          <div class="empty-state" style="padding:28px 20px">
+            <span class="empty-state-icon">◉</span>
+            <p style="color:var(--text-mid)">Für das Erfassen bitte einen konkreten Standort auswählen.</p>
+          </div>
+        ` : treatsHere.length ? `
           <div class="treatment-grid">
             ${treatsHere.map(t => `
               <button class="btn-treatment" data-id="${t.id}"
@@ -795,7 +806,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function attachEvents() {
     container.querySelector('#location-select')?.addEventListener('change', async e => {
-      selectedLocationId = e.target.value
+      selectedLocationId = e.target.value || 'all'  // never null — 'all' = no filter
       todayLogs = await fetchTodayLogs()
       rerender()
     })
