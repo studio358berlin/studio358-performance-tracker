@@ -11,6 +11,7 @@ export function TeamManagement({ user }) {
   let employees      = []
   let evaluations    = []
   let employeeHours  = []   // employee_daily_hours rows for current month
+  let monthlyTargets = []   // employee_monthly_targets for current month
   let activeLocation = 'all'
   let view           = 'list'
   let selectedEmployee = null
@@ -22,17 +23,22 @@ export function TeamManagement({ user }) {
     const firstOfMonth    = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
 
-    const [empRes, evalRes, logsRes, hoursRes] = await Promise.all([
+    const [empRes, evalRes, logsRes, hoursRes, targetsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
         .select('employee_id, date, hours_worked, break_minutes, location_id')
         .gte('date', firstOfMonthStr),
+      supabase.from('employee_monthly_targets')
+        .select('employee_id, target_hours')
+        .eq('year',  now.getFullYear())
+        .eq('month', now.getMonth() + 1),
     ])
-    employees   = empRes.data  ?? []
-    evaluations = evalRes.data ?? []
-    employeeHours = hoursRes.data ?? []
+    employees     = empRes.data  ?? []
+    evaluations   = evalRes.data ?? []
+    employeeHours = hoursRes.data   ?? []
+    monthlyTargets = targetsRes.data ?? []
 
     // Aggregate monthly tips per employee from logs
     const tipsMap = {}
@@ -480,6 +486,75 @@ export function TeamManagement({ user }) {
     })
   }
 
+  function openTargetHoursModal(empId) {
+    const now  = new Date()
+    const year  = now.getFullYear()
+    const month = now.getMonth() + 1
+    const emp   = employees.find(e => e.id === empId)
+    const cur   = Number(monthlyTargets.find(t => t.employee_id === empId)?.target_hours ?? 160)
+
+    const overlay = document.createElement('div')
+    overlay.style.position       = 'fixed'
+    overlay.style.top            = '0'
+    overlay.style.left           = '0'
+    overlay.style.width          = '100vw'
+    overlay.style.height         = '100vh'
+    overlay.style.zIndex         = '9999'
+    overlay.style.display        = 'flex'
+    overlay.style.alignItems     = 'center'
+    overlay.style.justifyContent = 'center'
+    overlay.style.background     = 'rgba(0,0,0,0.55)'
+    overlay.style.padding        = '16px'
+    overlay.style.boxSizing      = 'border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Soll-Stunden festlegen</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${emp?.full_name ?? '–'} · ${month}/${year}</div>
+          </div>
+          <button id="at-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Monatliches Stunden-Soll
+            <input id="at-target" type="number" min="0" max="300" step="4" value="${cur}"
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1.2rem;font-weight:700;text-align:center;margin-top:4px">
+          </label>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="at-save" class="btn btn-accent" style="width:100%;justify-content:center">Speichern</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+    overlay.querySelector('#at-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#at-save').addEventListener('click', async () => {
+      const target  = Math.max(0, parseFloat(overlay.querySelector('#at-target').value) || 0)
+      const saveBtn = overlay.querySelector('#at-save')
+      saveBtn.disabled = true; saveBtn.textContent = 'Speichern...'
+
+      const { error } = await supabase
+        .from('employee_monthly_targets')
+        .upsert({ employee_id: empId, year, month, target_hours: target },
+                { onConflict: 'employee_id,year,month' })
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        saveBtn.disabled = false; saveBtn.textContent = 'Speichern'
+        return
+      }
+      showToast(`Soll-Stunden für ${emp?.full_name ?? '–'} gespeichert.`)
+      overlay.remove()
+      await loadData()
+      rerender()
+    })
+  }
+
   function buildHoursTable() {
     const today     = localDate()
     const weekStart = (() => {
@@ -489,13 +564,17 @@ export function TeamManagement({ user }) {
     })()
 
     const rows = employees.map(emp => {
-      const empH = employeeHours.filter(h => h.employee_id === emp.id)
-      const netMins = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
+      const empH      = employeeHours.filter(h => h.employee_id === emp.id)
+      const netMins   = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
+      const targetH   = Number(monthlyTargets.find(t => t.employee_id === emp.id)?.target_hours ?? 160)
+      const monthMins = netMins(() => true)
+      const monthH    = monthMins / 60
+      const balance   = monthH - targetH
       return {
-        emp,
+        emp, targetH, balance,
         todayMins: netMins(h => h.date === today),
         weekMins:  netMins(h => h.date >= weekStart),
-        monthMins: netMins(() => true),
+        monthMins,
       }
     })
 
@@ -513,20 +592,34 @@ export function TeamManagement({ user }) {
                 <th>Heute</th>
                 <th>Diese Woche</th>
                 <th>Diesen Monat</th>
+                <th>Soll</th>
+                <th>Konto (+/−)</th>
               </tr>
             </thead>
             <tbody>
-              ${rows.map(({ emp, todayMins, weekMins, monthMins }) => `
-                <tr class="hours-row" data-emp="${emp.id}" style="cursor:pointer" title="Klicken zum Bearbeiten">
+              ${rows.map(({ emp, todayMins, weekMins, monthMins, targetH, balance }) => {
+                const balStr   = (balance >= 0 ? '+' : '') + balance.toFixed(1) + ' Std.'
+                const balColor = balance >= 0 ? '#27AE60' : 'var(--terracotta)'
+                return `
+                <tr class="hours-row" data-emp="${emp.id}" style="cursor:pointer" title="Klicken zum Tages-Eintrag bearbeiten">
                   <td>
-                    <div style="font-weight:500">${emp.full_name}</div>
-                    <div style="font-size:0.72rem;color:var(--text-light)">${locationLabel(emp.location)}</div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div>
+                        <div style="font-weight:500">${emp.full_name}</div>
+                        <div style="font-size:0.72rem;color:var(--text-light)">${locationLabel(emp.location)}</div>
+                      </div>
+                      <button class="btn-edit-target btn btn-ghost btn-sm" data-emp="${emp.id}"
+                        style="padding:2px 7px;font-size:0.7rem;line-height:1.6"
+                        title="Soll-Stunden bearbeiten">✏</button>
+                    </div>
                   </td>
                   <td style="font-weight:600;color:var(--aubergine)">${fmtHours(todayMins)}</td>
                   <td>${fmtHours(weekMins)}</td>
                   <td style="font-weight:600;color:var(--aubergine)">${fmtHours(monthMins)}</td>
+                  <td style="color:var(--text-mid)">${targetH} Std.</td>
+                  <td style="font-weight:700;color:${balColor}">${monthMins > 0 || balance < 0 ? balStr : '–'}</td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
         </div>
@@ -652,6 +745,13 @@ export function TeamManagement({ user }) {
       row.addEventListener('pointerenter', () => { row.style.background = 'var(--cream)' })
       row.addEventListener('pointerleave', () => { row.style.background = '' })
       row.addEventListener('click', () => openAdminHoursModal(row.dataset.emp))
+    })
+
+    container.querySelectorAll('.btn-edit-target[data-emp]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()   // don't open the daily hours modal
+        openTargetHoursModal(btn.dataset.emp)
+      })
     })
 
     const tableArea = container.querySelector('#team-table-area')

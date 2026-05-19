@@ -15,26 +15,32 @@ export function EmployeeView({ user, onNavigate }) {
   let allEntries  = []   // every row for this employee (for chart fallback + comparison card)
   let latestEntry = null // most recent entry of any kind
   let sops = []
-  let hoursData = []     // employee_daily_hours rows for current month
+  let hoursData    = []   // employee_daily_hours rows for current month
+  let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
   let selectedSOPId = null
   let container = null
 
   async function loadData() {
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
-    const [evalRes, sopRes, hoursRes] = await Promise.all([
+    const [evalRes, sopRes, hoursRes, analyticsRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
         .select('date, hours_worked, break_minutes')
         .eq('employee_id', user.id)
         .gte('date', monthStart),
+      supabase.from('employee_hours_analytics')
+        .select('net_hours_month, target_hours_current_month')
+        .eq('employee_id', user.id)
+        .maybeSingle(),
     ])
-    const all   = evalRes.data ?? []
-    allEntries  = all
-    evaluations = all.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
-    latestEntry = all[0] ?? null
-    sops        = sopRes.data ?? []
-    hoursData   = hoursRes.data ?? []
+    const all    = evalRes.data ?? []
+    allEntries   = all
+    evaluations  = all.filter(e => e.manager_scores && Object.keys(e.manager_scores).length > 0)
+    latestEntry  = all[0] ?? null
+    sops         = sopRes.data ?? []
+    hoursData    = hoursRes.data ?? []
+    analyticsRow = analyticsRes.data ?? null
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -193,6 +199,16 @@ export function EmployeeView({ user, onNavigate }) {
     const netMinsMonth = hoursData
       .reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
 
+    // Soll-Ist barometer (use analytics view when available, fall back to computed)
+    const netHoursMonth  = Number(analyticsRow?.net_hours_month  ?? (netMinsMonth / 60)) || 0
+    const targetHours    = Number(analyticsRow?.target_hours_current_month ?? 160)       || 160
+    const pct            = Math.round((netHoursMonth / targetHours) * 100)
+    const barPct         = Math.min(pct, 100)
+    const barColor       = pct >= 100 ? '#27AE60' : pct >= 60 ? 'var(--gold)' : 'var(--aubergine)'
+    const balanceH       = netHoursMonth - targetHours
+    const balanceStr     = (balanceH >= 0 ? '+' : '') + balanceH.toFixed(1) + ' Std.'
+    const balanceColor   = balanceH >= 0 ? '#27AE60' : 'var(--terracotta)'
+
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
@@ -254,12 +270,23 @@ export function EmployeeView({ user, onNavigate }) {
           </div>
           <div class="stat-sub">${netMinsWeek > 0 ? 'Std. ab Mo.' : 'Noch keine Zeiterfassung'}</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Monat (Netto)</div>
-          <div class="stat-value" style="font-size:1.3rem;color:var(--aubergine)">
-            ${netMinsMonth > 0 ? (netMinsMonth / 60).toFixed(1) : '–'}
+        <div class="stat-card" style="grid-column:span 2">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+            <div class="stat-label" style="margin:0">Diesen Monat</div>
+            <span style="font-size:0.78rem;font-weight:700;color:${balanceColor}">${netHoursMonth > 0 ? balanceStr : '–'}</span>
           </div>
-          <div class="stat-sub">${netMinsMonth > 0 ? 'Std. gesamt' : 'Noch keine Zeiterfassung'}</div>
+          <div style="font-size:1.25rem;font-weight:700;color:var(--aubergine);margin-bottom:10px">
+            ${netHoursMonth.toFixed(1)} / ${targetHours} Std.
+          </div>
+          <div style="height:10px;border-radius:5px;background:var(--cream-dark);overflow:hidden">
+            <div style="height:100%;width:${barPct}%;background:${barColor};border-radius:5px;transition:width 0.4s ease"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:5px">
+            <span style="font-size:0.72rem;color:${pct >= 100 ? '#27AE60' : 'var(--text-mid)'}">
+              ${pct}% ${pct >= 100 ? '· Ziel erreicht ✓' : 'des Monatsziels'}
+            </span>
+            <span style="font-size:0.72rem;color:var(--text-light)">${targetHours} Std. Soll</span>
+          </div>
         </div>
       </div>
 
