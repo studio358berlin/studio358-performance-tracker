@@ -96,7 +96,11 @@ function renderApp(viewId) {
     // ── Mobile: slim header bar (no hamburger) ─────────────────────────────
     const hdr = document.createElement('header')
     hdr.className = 'mobile-header'
-    hdr.innerHTML = `<span class="mobile-header-title">Studio 358</span>`
+    hdr.innerHTML = `
+      <img src="/images/studio358-logo.png" class="mobile-header-logo" alt="">
+      <span class="mobile-header-title">${viewName(viewId)}</span>
+      <div style="width:32px"></div>
+    `
     contentWrap.appendChild(hdr)
   }
 
@@ -202,6 +206,19 @@ async function loadView(viewId) {
   if (el) { viewContainer.innerHTML = ''; viewContainer.appendChild(el) }
 }
 
+// ── View name map (used in mobile header) ─────────────────────────────────────
+
+const VIEW_NAMES = {
+  checkout:          'Tagesabschluss',
+  analytics:         'Umsatz-Analytics',
+  dashboard:         'Dashboard',
+  team:              'Team',
+  sops:              'Wissensdatenbank',
+  'my-performance':  'Meine Performance',
+  admin:             'Studio-Admin',
+}
+function viewName(id) { return VIEW_NAMES[id] ?? 'Studio 358' }
+
 // ── Navigation ─────────────────────────────────────────────────────────────────
 
 function navigateTo(viewId) {
@@ -211,6 +228,9 @@ function navigateTo(viewId) {
   appLayout?.querySelectorAll('#bottom-nav .bottom-nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === viewId)
   })
+  // Update mobile header title
+  const hdrTitle = appLayout?.querySelector('.mobile-header-title')
+  if (hdrTitle) hdrTitle.textContent = viewName(viewId)
   loadView(viewId)
 }
 

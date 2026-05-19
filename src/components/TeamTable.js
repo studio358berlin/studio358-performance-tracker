@@ -68,6 +68,8 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, on
             <th>Status (aktueller Monat)</th>
             <th>Letzter Score</th>
             <th>Trend</th>
+            <th>Umsatz (Monat)</th>
+            <th>Trinkgeld (Monat)</th>
             <th style="text-align:right">Aktionen</th>
           </tr>
         </thead>
@@ -109,6 +111,16 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, on
                   }
                 </td>
                 <td>${getTrendHTML(trend)}</td>
+                <td style="font-weight:600;color:var(--aubergine)">
+                  ${emp.total_revenue_current_month > 0
+                    ? fmtEur(emp.total_revenue_current_month)
+                    : '<span style="color:var(--text-light)">–</span>'}
+                </td>
+                <td style="color:var(--gold)">
+                  ${(emp.total_tips_current_month ?? 0) > 0
+                    ? fmtEur(emp.total_tips_current_month)
+                    : '<span style="color:var(--text-light)">–</span>'}
+                </td>
                 <td style="text-align:right">
                   <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center">
                     <button class="btn btn-sm btn-ghost btn-detail" data-id="${emp.id}">Detail</button>
@@ -164,4 +176,8 @@ function getInitials(name = '') {
 
 function locationLabel(loc) {
   return { mitte: 'Mitte', kadewe: 'KaDeWe' }[loc] ?? loc ?? '–'
+}
+
+function fmtEur(n) {
+  return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }

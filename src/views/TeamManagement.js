@@ -17,13 +17,22 @@ export function TeamManagement({ user }) {
   let container      = null
 
   async function loadData() {
-    const [empRes, evalRes] = await Promise.all([
+    const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+
+    const [empRes, evalRes, logsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
+      supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
     ])
     employees   = empRes.data  ?? []
     evaluations = evalRes.data ?? []
-    console.log('Manager View Data (all evaluations):', evaluations)
+
+    // Aggregate monthly tips per employee from logs
+    const tipsMap = {}
+    for (const log of logsRes.data ?? []) {
+      tipsMap[log.employee_id] = (tipsMap[log.employee_id] ?? 0) + Number(log.tip)
+    }
+    employees = employees.map(e => ({ ...e, total_tips_current_month: tipsMap[e.id] ?? 0 }))
   }
 
   function filteredEmployees() {

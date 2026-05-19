@@ -10,6 +10,7 @@ export function RevenueAnalytics({ user }) {
   let dailyTarget = 0
 
   let selectedLocationId = user?.profile?.location_id ?? null
+  let selectedEmployeeId = null
   let period = 'today'   // 'today' | 'week' | 'month'
   let container = null
 
@@ -80,14 +81,20 @@ export function RevenueAnalytics({ user }) {
 
   // ── KPI calculations ──────────────────────────────────────────────────────
 
+  function filteredLogs() {
+    if (!selectedEmployeeId) return logs
+    return logs.filter(l => l.employee_id === selectedEmployeeId)
+  }
+
   function kpis() {
-    const real    = logs.filter(l => !l.is_no_show)
-    const noShows = logs.filter(l =>  l.is_no_show)
+    const source  = filteredLogs()
+    const real    = source.filter(l => !l.is_no_show)
+    const noShows = source.filter(l =>  l.is_no_show)
 
     const totalRevenue = real.reduce((s, l) => s + Number(l.revenue),       0)
-    const totalTips    = logs.reduce((s, l)  => s + Number(l.tip),          0)
+    const totalTips    = source.reduce((s, l) => s + Number(l.tip),         0)
     const avgPerClient = real.length ? totalRevenue / real.length : 0
-    const noShowRate   = logs.length ? (noShows.length / logs.length) * 100 : 0
+    const noShowRate   = source.length ? (noShows.length / source.length) * 100 : 0
 
     // Only "today" shows the gauge target percentage
     const todayRevenue  = period === 'today' ? totalRevenue : null
@@ -245,6 +252,51 @@ export function RevenueAnalytics({ user }) {
     }).join('')
   }
 
+  // ── Trinkgeld-Zusammenfassung ─────────────────────────────────────────────
+
+  function buildTipSummary() {
+    const source = filteredLogs()
+    // Aggregate tips per employee (all entries, including no-shows tips = 0)
+    const byEmp = {}
+    source.forEach(l => {
+      if (!byEmp[l.employee_id]) byEmp[l.employee_id] = { tip: 0, location_id: l.location_id }
+      byEmp[l.employee_id].tip += Number(l.tip)
+    })
+
+    const rows = Object.entries(byEmp)
+      .filter(([, v]) => v.tip > 0)
+      .sort((a, b) => b[1].tip - a[1].tip)
+
+    if (!rows.length) return `<div class="empty-state"><span class="empty-state-icon">◉</span><p>Kein Trinkgeld in diesem Zeitraum.</p></div>`
+
+    return `
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Mitarbeiter</th>
+              <th>Standort</th>
+              <th style="text-align:right">Trinkgeld</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(([id, v]) => `
+              <tr>
+                <td style="font-weight:500">${empName(id)}</td>
+                <td><span class="badge badge-neutral">${locName(v.location_id)}</span></td>
+                <td style="text-align:right;font-weight:600;color:var(--gold)">${fmt(v.tip)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+  }
+
+  function locName(id) {
+    return locations.find(l => l.id === id)?.name ?? '–'
+  }
+
   // ── Main HTML ─────────────────────────────────────────────────────────────
 
   function buildHTML() {
@@ -268,6 +320,10 @@ export function RevenueAnalytics({ user }) {
         </div>
         <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
           ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
+        </select>
+        <select id="analytics-employee" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
+          <option value="">Alle Mitarbeiter</option>
+          ${profiles.map(p => `<option value="${p.id}" ${p.id===selectedEmployeeId?'selected':''}>${p.full_name}</option>`).join('')}
         </select>
       </div>
 
@@ -312,11 +368,19 @@ export function RevenueAnalytics({ user }) {
       <!-- Top-Performer -->
       ${buildTopPerformer(k.byEmployee)}
 
-      <!-- Service-Frequenz -->
-      <div class="card">
-        <div class="card-header"><h4>Service-Frequenz</h4><span style="font-size:0.75rem;color:var(--text-light)">${label}</span></div>
+      <!-- Top Services -->
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header"><h4>Top Services</h4><span style="font-size:0.75rem;color:var(--text-light)">${label}</span></div>
         <div style="padding:16px 20px">
           ${buildFrequencyChart(k.byTreatment)}
+        </div>
+      </div>
+
+      <!-- Trinkgeld-Zusammenfassung -->
+      <div class="card">
+        <div class="card-header"><h4>Trinkgeld-Übersicht</h4><span style="font-size:0.75rem;color:var(--text-light)">${label}</span></div>
+        <div style="padding:0 0 4px">
+          ${buildTipSummary()}
         </div>
       </div>
     `
@@ -336,6 +400,11 @@ export function RevenueAnalytics({ user }) {
       selectedLocationId = e.target.value
       await loadLogs()
       await loadTarget()
+      rerender()
+    })
+
+    container.querySelector('#analytics-employee')?.addEventListener('change', e => {
+      selectedEmployeeId = e.target.value || null
       rerender()
     })
   }

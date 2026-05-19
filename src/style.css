@@ -1039,23 +1039,33 @@ tbody td {
 
 .mobile-header {
   display: flex;
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 50;
+  left: 0;
+  right: 0;
+  z-index: 1000;
   background: var(--aubergine);
   height: 52px;
-  padding: 0 20px;
+  padding: 0 16px;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+
+.mobile-header-logo {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
 .mobile-header-title {
   font-family: var(--font-heading);
-  font-size: 1.05rem;
+  font-size: 1rem;
   color: var(--cream);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
+  flex: 1;
+  text-align: center;
 }
 
 /* =============================================
@@ -1066,8 +1076,8 @@ tbody td {
 @media (max-width: 1023px) {
   .main-content {
     padding: 16px;
-    /* Leave room for the sticky bottom nav */
-    padding-bottom: 76px;
+    padding-top: 68px;   /* 52px fixed header + 16px gap */
+    padding-bottom: 80px; /* 60px fixed bottom-nav + 20px gap */
   }
 
   .stat-grid {
@@ -1136,15 +1146,14 @@ tbody td {
    ============================================= */
 
 .bottom-nav {
-  display: flex;                                   /* always flex when in DOM */
-  position: sticky;
+  display: flex;
+  position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 50;
+  z-index: 1000;
   background: var(--aubergine);
   border-top: 1px solid rgba(245,237,228,0.14);
-  flex-shrink: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -1193,6 +1202,19 @@ tbody td {
 /* =============================================
    Treatment quick-tap buttons – hover/active
    ============================================= */
+
+/* Treatment button grid — 2 cols on mobile, 4 cols on ≥640px */
+.treatment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 4px 0;
+}
+@media (min-width: 640px) {
+  .treatment-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
 
 .btn-treatment:hover,
 .btn-treatment:focus-visible {
