@@ -43,7 +43,7 @@ export function DailyCheckout({ user, onNavigate }) {
     const today = new Date().toISOString().slice(0, 10)
     let query = supabase
       .from('daily_revenue_logs')
-      .select('*, treatment:treatment_id(name, price), employee:employee_id(full_name)')
+      .select('*, treatment:treatment_id(name, price, duration), employee:employee_id(full_name)')
       .gte('created_at', today + 'T00:00:00')
       .lte('created_at', today + 'T23:59:59')
       .order('created_at', { ascending: false })
@@ -364,6 +364,98 @@ export function DailyCheckout({ user, onNavigate }) {
     })
   }
 
+  // ── Cockpit helpers ───────────────────────────────────────────────────────────
+
+  function buildKassensturz() {
+    if (!isManager) return ''
+    const METHODS = [
+      { key: 'bar',    label: 'Bar'          },
+      { key: 'ec',     label: 'EC-Karte'     },
+      { key: 'paypal', label: 'PayPal'        },
+      { key: 'online', label: 'Online vorab' },
+    ]
+    const byPayment = {}
+    for (const log of todayLogs.filter(l => !l.is_no_show)) {
+      const pm = log.payment_method ?? 'bar'
+      byPayment[pm] = (byPayment[pm] ?? 0) + Number(log.revenue)
+    }
+    const noShowLoss = todayLogs
+      .filter(l => l.is_no_show)
+      .reduce((s, l) => s + Number(l.treatment?.price ?? 0), 0)
+
+    return `
+      <div class="card" style="margin-bottom:16px;background:var(--aubergine);border:none">
+        <div style="padding:14px 18px 8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+          <span style="font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,237,228,0.55)">Kassensturz (Heute)</span>
+          ${noShowLoss > 0
+            ? `<span style="font-size:0.78rem;color:rgba(245,237,228,0.7);background:rgba(0,0,0,0.25);padding:3px 10px;border-radius:20px">No-Show Verlust: ${fmt(noShowLoss)}</span>`
+            : `<span style="font-size:0.75rem;color:rgba(245,237,228,0.35)">Keine No-Shows</span>`}
+        </div>
+        <div style="padding:0 18px 14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          ${METHODS.map(({ key, label }) => {
+            const total = byPayment[key] ?? 0
+            return `
+              <div style="background:rgba(245,237,228,0.09);border-radius:var(--radius-sm);padding:10px 6px;text-align:center">
+                <div style="font-size:0.65rem;color:rgba(245,237,228,0.5);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">${label}</div>
+                <div style="font-weight:700;font-size:0.98rem;color:${total > 0 ? 'var(--cream)' : 'rgba(245,237,228,0.25)'}">${fmt(total)}</div>
+              </div>`
+          }).join('')}
+        </div>
+      </div>`
+  }
+
+  function buildTeamStatus() {
+    if (!isManager) return ''
+    const byEmp = {}
+    for (const log of todayLogs) {
+      if (!log.employee_id) continue
+      if (!byEmp[log.employee_id]) {
+        byEmp[log.employee_id] = { name: log.employee?.full_name ?? '–', revenue: 0, tips: 0, minutes: 0, counts: {} }
+      }
+      const e = byEmp[log.employee_id]
+      e.tips += Number(log.tip)
+      if (!log.is_no_show) {
+        e.revenue += Number(log.revenue)
+        e.minutes += Number(log.treatment?.duration ?? treatments.find(t => t.id === log.treatment_id)?.duration ?? 60)
+        const n = log.treatment?.name ?? '?'
+        e.counts[n] = (e.counts[n] ?? 0) + 1
+      }
+    }
+    if (!Object.keys(byEmp).length) return ''
+
+    const cards = Object.entries(byEmp).map(([empId, d]) => {
+      const split = Object.entries(d.counts).map(([n, c]) => `${c}× ${n}`).join(' · ') || '–'
+      const util  = d.minutes > 0 ? Math.round((d.minutes / (8 * 60)) * 100) : 0
+      const uCol  = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+      return `
+        <div style="background:var(--cream);border-radius:var(--radius-md);padding:12px 14px;display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
+            <span style="font-weight:600;color:var(--aubergine);font-size:0.9rem">${d.name}</span>
+            <div style="font-size:0.82rem;display:flex;gap:10px">
+              <span style="font-weight:600;color:var(--aubergine)">${fmt(d.revenue)}</span>
+              <span style="color:var(--gold)">TG: ${fmt(d.tips)}</span>
+            </div>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-mid)">${split}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+            <span style="font-size:0.75rem;color:var(--text-mid)">Stunden:</span>
+            <input type="number" min="1" max="24" step="0.5" value="8"
+              class="hours-input" data-emp="${empId}" data-minutes="${d.minutes}"
+              style="width:54px;padding:3px 6px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;text-align:center">
+            <span class="util-display" data-emp="${empId}" style="font-size:0.82rem;font-weight:700;color:${uCol}">
+              Auslastung: ${util}%
+            </span>
+          </div>
+        </div>`
+    }).join('')
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header"><h4>Team-Status & Auslastung</h4></div>
+        <div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">${cards}</div>
+      </div>`
+  }
+
   // ── HTML builders ─────────────────────────────────────────────────────────────
 
   function buildHTML() {
@@ -379,13 +471,15 @@ export function DailyCheckout({ user, onNavigate }) {
       </div>
 
       ${isManager ? `
-        <div style="margin-bottom:20px">
+        <div style="margin-bottom:16px">
           <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
           <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:160px">
             ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
           </select>
         </div>
       ` : ''}
+
+      ${buildKassensturz()}
 
       <div class="stat-grid" style="margin-bottom:24px">
         <div class="stat-card">
@@ -429,37 +523,39 @@ export function DailyCheckout({ user, onNavigate }) {
         `}
       </div>
 
+      ${buildTeamStatus()}
+
       <div class="card">
-        <div class="card-header"><h4>Heutige Einträge</h4></div>
+        <div class="card-header"><h4>Heutige Einträge</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
         ${todayLogs.length ? `
-          <div class="table-wrapper">
-            <table>
+          <div class="table-wrapper" style="max-height:280px;overflow-y:auto">
+            <table style="font-size:0.82rem">
               <thead>
                 <tr>
-                  <th>Zeit</th>
-                  ${isManager ? '<th>Mitarbeiter</th>' : ''}
-                  <th>Behandlung</th>
-                  <th>Umsatz</th>
-                  <th>Trinkgeld</th>
-                  <th></th>
+                  <th style="padding:6px 10px">Zeit</th>
+                  ${isManager ? '<th style="padding:6px 10px">Mitarbeiter</th>' : ''}
+                  <th style="padding:6px 10px">Behandlung</th>
+                  <th style="padding:6px 10px">Umsatz</th>
+                  <th style="padding:6px 10px">TG</th>
+                  <th style="padding:6px 10px"></th>
                 </tr>
               </thead>
               <tbody>
                 ${todayLogs.map(log => `
-                  <tr style="${log.is_no_show ? 'opacity:0.55' : ''}">
-                    <td style="color:var(--text-mid);white-space:nowrap">${new Date(log.created_at).toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' })}</td>
-                    ${isManager ? `<td style="font-size:0.82rem">${log.employee?.full_name ?? '–'}</td>` : ''}
-                    <td>
+                  <tr style="${log.is_no_show ? 'opacity:0.5' : ''}">
+                    <td style="padding:5px 10px;color:var(--text-mid);white-space:nowrap">${new Date(log.created_at).toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' })}</td>
+                    ${isManager ? `<td style="padding:5px 10px;font-size:0.78rem;color:var(--text-mid)">${log.employee?.full_name ?? '–'}</td>` : ''}
+                    <td style="padding:5px 10px">
                       ${log.treatment?.name ?? '–'}
-                      ${log.is_no_show ? `<span style="font-size:0.7rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px">No-Show</span>` : ''}
+                      ${log.is_no_show ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 4px;margin-left:3px">NS</span>` : ''}
                     </td>
-                    <td style="font-weight:600;color:${log.is_no_show ? 'var(--text-light)' : 'var(--aubergine)'}">${fmt(log.revenue)}</td>
-                    <td style="color:var(--gold)">${log.tip > 0 ? fmt(log.tip) : '–'}</td>
-                    <td>
+                    <td style="padding:5px 10px;font-weight:600;color:${log.is_no_show ? 'var(--text-light)' : 'var(--aubergine)'}">${fmt(log.revenue)}</td>
+                    <td style="padding:5px 10px;color:var(--gold)">${Number(log.tip) > 0 ? fmt(log.tip) : '–'}</td>
+                    <td style="padding:5px 10px">
                       ${canEdit(log) ? `
-                        <div style="display:flex;gap:4px">
-                          <button class="btn btn-ghost btn-sm btn-edit-log" data-id="${log.id}" style="font-size:0.75rem;padding:4px 7px">✏</button>
-                          <button class="btn btn-sm btn-delete-log" data-id="${log.id}" style="font-size:0.75rem;padding:4px 7px;background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">🗑</button>
+                        <div style="display:flex;gap:3px">
+                          <button class="btn btn-ghost btn-sm btn-edit-log" data-id="${log.id}" style="font-size:0.72rem;padding:3px 6px">✏</button>
+                          <button class="btn btn-sm btn-delete-log" data-id="${log.id}" style="font-size:0.72rem;padding:3px 6px;background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">🗑</button>
                         </div>
                       ` : ''}
                     </td>
@@ -503,6 +599,19 @@ export function DailyCheckout({ user, onNavigate }) {
 
     container.querySelectorAll('.btn-delete-log[data-id]').forEach(btn => {
       btn.addEventListener('click', () => deleteLog(btn.dataset.id))
+    })
+
+    // Live utilization recalculation when hours input changes
+    container.querySelectorAll('.hours-input[data-emp]').forEach(input => {
+      input.addEventListener('input', () => {
+        const minutes = Number(input.dataset.minutes)
+        const hours   = Math.max(0.5, parseFloat(input.value) || 8)
+        const util    = Math.round((minutes / (hours * 60)) * 100)
+        const display = container.querySelector(`.util-display[data-emp="${input.dataset.emp}"]`)
+        if (!display) return
+        display.textContent = `Auslastung: ${util}%`
+        display.style.color = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+      })
     })
   }
 
