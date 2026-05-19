@@ -186,32 +186,36 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function saveHours(hours, breakMins) {
-    const today      = localDate()
-    const locationId = user?.profile?.location_id ?? selectedLocationId ?? null
-    const base = {
+    const today     = localDate()
+    const workHours = parseFloat(String(hours)) || 0
+    const breakMin  = Math.max(0, parseInt(String(breakMins), 10) || 0)
+
+    // Minimal payload — created_at / updated_at / location_id / created_by
+    // are intentionally omitted; DB defaults handle them to avoid schema conflicts.
+    const payload = {
       employee_id:   user.id,
       work_date:     today,
-      work_hours:    parseFloat(String(hours)) || 0,
-      break_minutes: Math.max(0, parseInt(String(breakMins), 10) || 0),
-      created_by:    user.id,
-      updated_at:    new Date().toISOString(),
+      work_hours:    workHours,
+      break_minutes: breakMin,
     }
 
     let data, error
     try {
-      // Primary attempt: with location_id
       const r1 = await supabase
         .from('employee_daily_hours')
-        .upsert({ ...base, location_id: locationId }, { onConflict: 'employee_id,work_date' })
+        .upsert(payload, { onConflict: 'employee_id,work_date' })
         .select().single()
       data  = r1.data
       error = r1.error
 
-      // Automatic fallback: if location_id caused a DB error, retry without it
+      // Emergency fallback: absolute minimum — never block the employee
       if (error) {
         const r2 = await supabase
           .from('employee_daily_hours')
-          .upsert(base, { onConflict: 'employee_id,work_date' })
+          .upsert(
+            { employee_id: user.id, work_date: today, work_hours: workHours },
+            { onConflict: 'employee_id,work_date' }
+          )
           .select().single()
         data  = r2.data
         error = r2.error
@@ -222,10 +226,10 @@ export function DailyCheckout({ user, onNavigate }) {
     }
 
     if (error) { showToast('Fehler: ' + error.message, 'error'); return false }
-    hoursToday = data       // triggers green banner + utilization update via rerender()
+    hoursToday = data
     showToast('Arbeitszeit gespeichert.')
-    rerender()
-    return true             // caller closes the modal
+    rerender()   // green banner + utilization update
+    return true  // caller closes modal
   }
 
   function openHoursModal() {
