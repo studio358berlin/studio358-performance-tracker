@@ -12,6 +12,30 @@ export function DailyCheckout({ user, onNavigate }) {
   let hoursToday         = null   // employee's own hours entry for today
   let teamHoursMap       = {}     // manager: employee_id → hours entry
   let selectedDate       = localDate()
+  let period             = localStorage.getItem('checkoutPeriod') || 'today'
+
+  // ── Date range helper ─────────────────────────────────────────────────────────
+
+  function logDateRange() {
+    const anchor = new Date(selectedDate + 'T12:00:00')
+    if (period === 'today') {
+      return {
+        from: new Date(selectedDate + 'T00:00:00').toISOString(),
+        to:   new Date(selectedDate + 'T23:59:59').toISOString(),
+      }
+    }
+    if (period === 'week') {
+      const mon = new Date(anchor)
+      mon.setDate(anchor.getDate() - (anchor.getDay() === 0 ? 6 : anchor.getDay() - 1))
+      mon.setHours(0, 0, 0, 0)
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6); sun.setHours(23, 59, 59, 999)
+      return { from: mon.toISOString(), to: sun.toISOString() }
+    }
+    // month
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 0, 0, 0, 0)
+    const last  = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999)
+    return { from: first.toISOString(), to: last.toISOString() }
+  }
 
   // ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -56,14 +80,12 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   async function fetchTodayLogs() {
-    // Use local-timezone midnight/end-of-day so the filter is always correct in CET/CEST
-    const startOfDay = new Date(selectedDate + 'T00:00:00')
-    const endOfDay   = new Date(selectedDate + 'T23:59:59')
+    const { from, to } = logDateRange()
     let query = supabase
       .from('daily_revenue_logs')
       .select('*, treatment:treatment_id(name, price, duration), employee:employee_id(full_name)')
-      .gte('created_at', startOfDay.toISOString())
-      .lte('created_at', endOfDay.toISOString())
+      .gte('created_at', from)
+      .lte('created_at', to)
       .order('created_at', { ascending: false })
 
     if (!isManager) {
@@ -77,7 +99,13 @@ export function DailyCheckout({ user, onNavigate }) {
     return data ?? []
   }
 
-  // ── Computed helpers ──────────────────────────────────────────────────────────
+  // ── Computed helpers ─────────────────────────────────────────────────────────
+
+  function periodLabel() {
+    if (period === 'week')  return 'diese Woche'
+    if (period === 'month') return 'diesen Monat'
+    return selectedDate === localDate() ? 'heute' : new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
+  }
 
   function locationTreatments() {
     let result = (selectedLocationId && selectedLocationId !== 'all')
@@ -623,7 +651,7 @@ export function DailyCheckout({ user, onNavigate }) {
     return `
       <div class="card" style="margin-bottom:16px;background:var(--aubergine);border:none">
         <div style="padding:14px 18px 8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-          <span style="font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,237,228,0.55)">Kassensturz (Heute)</span>
+          <span style="font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,237,228,0.55)">Kassensturz (${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'Heute'})</span>
           ${noShowLoss > 0
             ? `<span style="font-size:0.78rem;color:rgba(245,237,228,0.7);background:rgba(0,0,0,0.25);padding:3px 10px;border-radius:20px">No-Show Verlust: ${fmt(noShowLoss)}</span>`
             : `<span style="font-size:0.75rem;color:rgba(245,237,228,0.35)">Keine No-Shows</span>`}
@@ -718,39 +746,54 @@ export function DailyCheckout({ user, onNavigate }) {
       ${!isManager ? buildHoursBanner() : ''}
 
       ${isManager ? `
-        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
-          <div>
-            <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
-            <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:220px">
-              <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte (Gesamtbilanz)</option>
-              ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
-            </select>
+        <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
+          <div class="location-tabs" style="margin:0">
+            <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
+            <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
+            <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
           </div>
-          <div>
-            <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Datum</label>
-            <input type="date" id="date-picker" value="${selectedDate}" max="${localDate()}"
-              style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+            <div>
+              <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
+              <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:220px">
+                <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte (Gesamtbilanz)</option>
+                ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Datum</label>
+              <input type="date" id="date-picker" value="${selectedDate}" max="${localDate()}"
+                style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
+            </div>
           </div>
         </div>
-      ` : ''}
+      ` : `
+        <div style="margin-bottom:16px">
+          <div class="location-tabs" style="margin:0">
+            <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
+            <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
+            <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
+          </div>
+        </div>
+      `}
 
       ${buildKassensturz()}
 
       <div class="stat-grid" style="margin-bottom:24px">
         <div class="stat-card">
-          <div class="stat-label">Einträge heute</div>
+          <div class="stat-label">Einträge ${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'heute'}</div>
           <div class="stat-value">${summary.total}</div>
           <div class="stat-sub">${summary.noShows} No-Show${summary.noShows !== 1 ? 's' : ''}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Umsatz heute</div>
+          <div class="stat-label">Umsatz ${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'heute'}</div>
           <div class="stat-value" style="color:var(--aubergine)">${fmt(summary.revenue)}</div>
-          <div class="stat-sub">ohne No-Shows</div>
+          <div class="stat-sub">ohne No-Shows & Stornos</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Trinkgeld</div>
           <div class="stat-value" style="color:var(--gold)">${fmt(summary.tips)}</div>
-          <div class="stat-sub">gesamt heute</div>
+          <div class="stat-sub">gesamt ${periodLabel()}</div>
         </div>
       </div>
 
@@ -793,7 +836,7 @@ export function DailyCheckout({ user, onNavigate }) {
       ${buildMyHoursCard()}
 
       <div class="card">
-        <div class="card-header"><h4>Heutige Einträge</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
+        <div class="card-header"><h4>${period === 'week' ? 'Einträge diese Woche' : period === 'month' ? 'Einträge diesen Monat' : 'Heutige Einträge'}</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
         ${todayLogs.length ? `
           <div class="table-wrapper" style="max-height:280px;overflow-y:auto">
             <table style="font-size:0.82rem">
@@ -842,6 +885,14 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   function attachEvents() {
+    container.querySelectorAll('.location-tab[data-period]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        period = btn.dataset.period
+        localStorage.setItem('checkoutPeriod', period)
+        await refreshDay()
+      })
+    })
+
     container.querySelector('#location-select')?.addEventListener('change', async e => {
       selectedLocationId = e.target.value || 'all'  // never null — 'all' = no filter
       localStorage.setItem('selectedLocationId', selectedLocationId)
