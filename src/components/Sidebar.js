@@ -10,7 +10,7 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
     { id: 'dashboard', label: 'Performance Tracker' },
     { id: 'team',      label: 'Team Management'    },
     { id: 'sops',      label: 'Studio Guide'       },
-    { id: 'admin',     label: 'Studio-Admin'       },
+    { id: 'admin',     label: 'Studio Admin'        },
   ]
 
   const employeeNav = [
