@@ -84,7 +84,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
           <h4 style="margin-bottom:12px;font-size:0.95rem">Qualitätsdaten</h4>
           ${isManager ? `
           <div id="period-stats-card" style="margin-bottom:14px;padding:12px 14px;background:var(--cream);border-radius:var(--radius-sm)">
-            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">Performance-Fakten (Letzte 30 Tage)</div>
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">performance 30 tage</div>
             <div id="period-stats-body" style="font-size:0.85rem;color:var(--text-mid)">Lade Daten…</div>
           </div>
           ` : ''}
@@ -191,7 +191,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center">
         <div>
           <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${appts}</div>
-          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Kunden</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Bediente Kunden</div>
         </div>
         <div>
           <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${fmtEur(revenue)}</div>
