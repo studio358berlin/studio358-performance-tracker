@@ -106,6 +106,12 @@ export function DailyCheckout({ user, onNavigate }) {
     return log.employee_id === user.id
   }
 
+  function cancellerName(id) {
+    if (!id) return null
+    if (id === user.id) return user.profile?.full_name ?? 'Admin'
+    return employees.find(e => e.id === id)?.full_name ?? null
+  }
+
   // ── Save / delete ─────────────────────────────────────────────────────────────
 
   async function saveLog(data, logId = null) {
@@ -181,11 +187,11 @@ export function DailyCheckout({ user, onNavigate }) {
 
     const { error } = await supabase
       .from('daily_revenue_logs')
-      .update({ is_cancelled: true, cancelled_at: new Date().toISOString() })
+      .update({ is_cancelled: true, cancelled_at: new Date().toISOString(), cancelled_by: user.id })
       .eq('id', logId)
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast('Eintrag storniert.')
-    todayLogs = todayLogs.map(l => l.id === logId ? { ...l, is_cancelled: true } : l)
+    todayLogs = todayLogs.map(l => l.id === logId ? { ...l, is_cancelled: true, cancelled_by: user.id } : l)
     rerender()
     await refreshLogs()
   }
@@ -813,7 +819,7 @@ export function DailyCheckout({ user, onNavigate }) {
                     <td style="padding:5px 10px;${strikeStyle}">
                       ${log.treatment?.name ?? '–'}
                       ${log.is_no_show && !cancelled ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 4px;margin-left:3px">NS</span>` : ''}
-                      ${cancelled ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;font-style:normal;font-weight:600">Storniert</span>` : ''}
+                      ${cancelled ? `<span style="font-size:0.65rem;background:var(--terracotta);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;font-style:normal;font-weight:600">Storniert</span>${isManager && log.cancelled_by ? `<span style="font-size:0.65rem;color:var(--text-light);margin-left:4px">(von: ${cancellerName(log.cancelled_by) ?? '–'})</span>` : ''}` : ''}
                     </td>
                     <td style="padding:5px 10px;font-weight:600;${cancelled ? strikeStyle : log.is_no_show ? 'color:var(--text-light)' : 'color:var(--aubergine)'}">${fmt(log.revenue)}</td>
                     <td style="padding:5px 10px;${cancelled ? strikeStyle : 'color:var(--gold)'}">${Number(log.tip) > 0 ? fmt(log.tip) : '–'}</td>
