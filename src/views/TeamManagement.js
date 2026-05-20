@@ -12,7 +12,7 @@ export function TeamManagement({ user }) {
   let evaluations    = []
   let employeeHours  = []   // employee_daily_hours rows for current month
   let monthlyTargets = []   // employee_monthly_targets for current month
-  let activeLocation = 'all'
+  let activeLocation = localStorage.getItem('activeLocation') || 'all'
   let view           = 'list'
   let selectedEmployee = null
   let showAddForm    = false
@@ -720,7 +720,11 @@ export function TeamManagement({ user }) {
     })
 
     container.querySelectorAll('.location-tab[data-loc]').forEach(tab => {
-      tab.addEventListener('click', () => { activeLocation = tab.dataset.loc; rerender() })
+      tab.addEventListener('click', () => {
+        activeLocation = tab.dataset.loc
+        localStorage.setItem('activeLocation', activeLocation)
+        rerender()
+      })
     })
 
     container.querySelector('#add-employee-form')?.addEventListener('submit', async e => {

@@ -9,7 +9,7 @@ export function RevenueAnalytics({ user }) {
   let treatments  = []
   let dailyTarget = 0
 
-  let selectedLocationId = user?.profile?.location_id ?? null
+  let selectedLocationId = localStorage.getItem('selectedLocationId') || user?.profile?.location_id || null
   let selectedEmployeeId = null
   let period = 'today'   // 'today' | 'week' | 'month'
   let container = null
@@ -522,6 +522,7 @@ export function RevenueAnalytics({ user }) {
 
     container.querySelector('#analytics-location')?.addEventListener('change', async e => {
       selectedLocationId = e.target.value || 'all'
+      localStorage.setItem('selectedLocationId', selectedLocationId)
       await Promise.all([loadLogs(), loadTarget()])
       rerender()
     })

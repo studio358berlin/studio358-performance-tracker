@@ -7,7 +7,7 @@ export function DailyCheckout({ user, onNavigate }) {
   let treatments         = []
   let employees          = []
   let todayLogs          = []
-  let selectedLocationId = user?.profile?.location_id ?? null
+  let selectedLocationId = localStorage.getItem('selectedLocationId') || user?.profile?.location_id || null
   let container          = null
   let hoursToday         = null   // employee's own hours entry for today
   let teamHoursMap       = {}     // manager: employee_id → hours entry
@@ -838,6 +838,7 @@ export function DailyCheckout({ user, onNavigate }) {
   function attachEvents() {
     container.querySelector('#location-select')?.addEventListener('change', async e => {
       selectedLocationId = e.target.value || 'all'  // never null — 'all' = no filter
+      localStorage.setItem('selectedLocationId', selectedLocationId)
       todayLogs = await fetchTodayLogs()
       rerender()
     })
