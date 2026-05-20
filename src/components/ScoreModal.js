@@ -82,28 +82,15 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         ${!isSelfAssessment ? `
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--cream-dark)">
           <h4 style="margin-bottom:12px;font-size:0.95rem">Qualitätsdaten</h4>
-          ${isManager ? `
           <div id="period-stats-card" style="margin-bottom:14px;padding:12px 14px;background:var(--cream);border-radius:var(--radius-sm)">
-            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">performance 30 tage</div>
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">performance tracker</div>
             <div id="period-stats-body" style="font-size:0.85rem;color:var(--text-mid)">Lade Daten…</div>
           </div>
-          ` : ''}
           <input type="hidden" id="appointments-count" value="20">
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">Nachbesserungen / Reklamationen</label>
             <input class="form-input" type="number" id="reclamations-count"
               value="0" min="0" max="50" />
-          </div>
-          <div class="form-group" style="margin-top:14px">
-            <label class="form-label">Kundenfeedback (1–5)</label>
-            <select class="form-select" id="customer-feedback">
-              <option value="">– kein Feedback –</option>
-              <option value="5">5 – Ausgezeichnet</option>
-              <option value="4">4 – Sehr gut</option>
-              <option value="3">3 – Gut</option>
-              <option value="2">2 – Verbesserungsbedarf</option>
-              <option value="1">1 – Schlecht</option>
-            </select>
           </div>
           <div class="form-group">
             <label class="form-label">Notizen (optional)</label>
@@ -147,9 +134,9 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
     overlay.addEventListener('click', e => { if (e.target === overlay) close() })
     overlay.querySelector('#save-btn').addEventListener('click', () => save(overlay))
 
-    if (!isSelfAssessment && isManager && latestEval?.employee_id && latestEval?.created_at) {
+    if (!isSelfAssessment && latestEval?.employee_id && latestEval?.created_at) {
       loadPeriodStats(overlay, latestEval)
-    } else if (!isSelfAssessment && isManager) {
+    } else if (!isSelfAssessment) {
       const body = overlay.querySelector('#period-stats-body')
       if (body) body.textContent = 'Kein Selbst-Assessment vorhanden.'
     }
@@ -187,15 +174,22 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
     const avg     = appts > 0 ? revenue / appts : 0
     const fmtEur  = n => Number(n).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 
-    statsBody.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center">
-        <div>
-          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${appts}</div>
-          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Bediente Kunden</div>
-        </div>
+    const cols    = isManager ? 5 : 3
+    const managerTiles = `
         <div>
           <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${fmtEur(revenue)}</div>
           <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Umsatz</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${fmtEur(avg)}</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Ø Kunde</div>
+        </div>`
+
+    statsBody.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:6px;text-align:center">
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${appts}</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Bediente Kunden</div>
         </div>
         <div>
           <div style="font-weight:700;color:var(--gold);font-size:0.95rem">${fmtEur(tips)}</div>
@@ -203,12 +197,9 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         </div>
         <div>
           <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${Number(hours).toFixed(1)} Std.</div>
-          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Stunden</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Arbeitszeit</div>
         </div>
-        <div>
-          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${fmtEur(avg)}</div>
-          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Ø Kunde</div>
-        </div>
+        ${isManager ? managerTiles : ''}
       </div>
     `
     if (appInput) appInput.value = Math.max(1, appts)
