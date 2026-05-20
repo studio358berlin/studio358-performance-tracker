@@ -81,12 +81,16 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
 
         ${!isSelfAssessment ? `
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--cream-dark)">
-          <h4 style="margin-bottom:14px;font-size:0.95rem">Qualitätsdaten</h4>
+          <h4 style="margin-bottom:12px;font-size:0.95rem">Qualitätsdaten</h4>
+          <div id="period-stats-card" style="margin-bottom:14px;padding:12px 14px;background:var(--cream);border-radius:var(--radius-sm)">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">Automatische 30-Tage-Bilanz</div>
+            <div id="period-stats-body" style="font-size:0.85rem;color:var(--text-mid)">Lade Daten…</div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Termine im Zeitraum</label>
+              <label class="form-label">Termine im Zeitraum <span style="font-size:0.7rem;color:var(--text-light)">(auto)</span></label>
               <input class="form-input" type="number" id="appointments-count"
-                value="20" min="1" max="200" />
+                value="20" min="1" max="200" readonly style="background:var(--cream);cursor:default" />
             </div>
             <div class="form-group" style="margin-bottom:0">
               <label class="form-label">Nachbesserungen / Reklamationen</label>
@@ -147,7 +151,61 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
     overlay.addEventListener('click', e => { if (e.target === overlay) close() })
     overlay.querySelector('#save-btn').addEventListener('click', () => save(overlay))
 
+    if (!isSelfAssessment && latestEval?.employee_id && latestEval?.created_at) {
+      loadPeriodStats(overlay, latestEval)
+    } else if (!isSelfAssessment) {
+      const body = overlay.querySelector('#period-stats-body')
+      if (body) body.textContent = 'Kein Selbst-Assessment vorhanden – Termine manuell eintragen.'
+    }
+
     return overlay
+  }
+
+  async function loadPeriodStats(overlay, evaluation) {
+    const { data, error } = await supabase.rpc('get_employee_evaluation_period_stats', {
+      target_employee_id:    evaluation.employee_id,
+      evaluation_created_at: evaluation.created_at,
+    })
+
+    const statsBody = overlay.querySelector('#period-stats-body')
+    const appInput  = overlay.querySelector('#appointments-count')
+    if (!statsBody) return
+
+    if (error || !data) {
+      statsBody.textContent = 'Statistik nicht verfügbar.'
+      if (appInput) { appInput.readOnly = false; appInput.style.background = ''; appInput.style.cursor = '' }
+      return
+    }
+
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row) {
+      statsBody.textContent = 'Keine Daten im Zeitraum.'
+      if (appInput) { appInput.readOnly = false; appInput.style.background = ''; appInput.style.cursor = '' }
+      return
+    }
+
+    const appts   = Number(row.appointment_count ?? row.total_appointments ?? row.appointments ?? 0)
+    const revenue = Number(row.total_revenue ?? row.revenue ?? 0)
+    const hours   = Number(row.hours_worked  ?? row.total_hours ?? 0)
+    const fmtEur  = n => Number(n).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+
+    statsBody.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:1.1rem">${appts}</div>
+          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">Termine</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:1.1rem">${fmtEur(revenue)}</div>
+          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">Umsatz</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:1.1rem">${Number(hours).toFixed(1)} Std.</div>
+          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">Arbeitszeit</div>
+        </div>
+      </div>
+    `
+    if (appInput) appInput.value = Math.max(1, appts)
   }
 
   function updateStars(overlay, criterion, value) {

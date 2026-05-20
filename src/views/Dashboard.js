@@ -65,10 +65,14 @@ export function Dashboard({ user }) {
   function showEvaluateModal(employeeId) {
     const emp = employees.find(e => e.id === employeeId)
     if (!emp) return
+    const latestSelfEval = evaluations
+      .filter(e => e.employee_id === employeeId && e.is_self_assessment === true)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] ?? null
 
     const modal = ScoreModal({
       employee:    emp,
       evaluatorId: user.id,
+      latestEval:  latestSelfEval,
       onSaved: async () => {
         showToast('Bewertung gespeichert!', 'success')
         await loadData()

@@ -3,7 +3,7 @@ import { formatScore, getTrend, getTrendHTML, getScoreColor } from '../lib/scori
 const STATUS = {
   missing:  { color: '#E74C3C', text: 'Selbstbewertung fehlt' },
   waiting:  { color: '#27AE60', text: 'Wartet auf Manager'    },
-  complete: { color: '#4A90B8', text: 'Abgeschlossen'          },
+  complete: { color: '#27AE60', text: 'Abgeschlossen'          },
 }
 
 function currentYearMonth() {
