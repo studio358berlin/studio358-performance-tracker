@@ -13,6 +13,7 @@ export function DailyCheckout({ user, onNavigate }) {
   let teamHoursMap       = {}     // manager: employee_id → hours entry
   let selectedDate       = localDate()
   let period             = localStorage.getItem('checkoutPeriod') || 'today'
+  let clockInTime        = localStorage.getItem('clockIn_' + localDate()) || null
 
   // ── Date range helper ─────────────────────────────────────────────────────────
 
@@ -243,11 +244,11 @@ export function DailyCheckout({ user, onNavigate }) {
     rerender()
   }
 
-  async function saveHours(hours, breakMins) {
+  async function saveHours(hours, breakMins, locationOverride = null) {
     const today    = localDate()
     const h        = parseFloat(String(hours)) || 0
     const b        = Math.max(0, parseInt(String(breakMins), 10) || 0)
-    const locId    = user?.profile?.location_id ?? null
+    const locId    = locationOverride ?? user?.profile?.location_id ?? null
 
     const payload = {
       employee_id:   user.id,
@@ -351,6 +352,65 @@ export function DailyCheckout({ user, onNavigate }) {
     })
   }
 
+  function openClockInModal() {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    const profileLocId = user?.profile?.location_id ?? null
+    const defaultLocId = (selectedLocationId && selectedLocationId !== 'all') ? selectedLocationId : profileLocId
+    const startStr     = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Schicht starten</h3>
+          <button id="ci-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;font-size:0.85rem;color:var(--text-mid)">
+            Start: <strong style="color:var(--aubergine)">${startStr} Uhr</strong> · 8 Std. / 30 Min. Pause werden automatisch gespeichert.
+          </div>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Standort
+            <select id="ci-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
+              ${locations.map(l => `<option value="${l.id}" ${l.id === defaultLocId ? 'selected' : ''}>${l.name}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="ci-start" class="btn btn-accent" style="width:100%;justify-content:center">▶ Schicht starten</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+    overlay.querySelector('#ci-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+    overlay.querySelector('#ci-start').addEventListener('click', async () => {
+      const locId = overlay.querySelector('#ci-location').value
+      const btn   = overlay.querySelector('#ci-start')
+      btn.disabled = true; btn.textContent = 'Starte...'
+      await clockInShift(locId)
+      overlay.remove()
+    })
+  }
+
+  async function clockInShift(locationId) {
+    clockInTime = new Date().toISOString()
+    localStorage.setItem('clockIn_' + localDate(), clockInTime)
+    await saveHours(8, 30, locationId)
+  }
+
+  async function earlyCheckOut() {
+    if (!clockInTime) return
+    if (!confirm('Schicht jetzt beenden?\n\nDie tatsächliche Arbeitszeit wird berechnet und gespeichert.')) return
+    const diffH   = (Date.now() - new Date(clockInTime).getTime()) / 3600000
+    const actualH = Math.max(0.5, Math.round(diffH * 4) / 4)
+    localStorage.removeItem('clockIn_' + localDate())
+    clockInTime = null
+    await saveHours(actualH, 30)
+  }
+
   function buildMyHoursCard() {
     if (isManager) return ''
     const treatMins = todayLogs
@@ -369,9 +429,12 @@ export function DailyCheckout({ user, onNavigate }) {
       <div class="card" style="margin-bottom:24px">
         <div class="card-header">
           <h4>Meine Arbeitszeit heute</h4>
-          <button class="btn ${hoursToday ? 'btn-ghost' : 'btn-accent'} btn-sm" id="btn-log-hours">
-            ${hoursToday ? '✏ Bearbeiten' : '+ Jetzt erfassen'}
-          </button>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${!!clockInTime && selectedDate === localDate() ? `<button class="btn btn-sm btn-early-checkout" style="background:var(--gold);color:#fff;border:none;cursor:pointer">⏹ Früher Feierabend</button>` : ''}
+            <button class="btn ${hoursToday ? 'btn-ghost' : 'btn-accent'} btn-sm" id="btn-log-hours">
+              ${hoursToday ? '✏ Bearbeiten' : '+ Jetzt erfassen'}
+            </button>
+          </div>
         </div>
         ${hoursToday ? `
           <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
@@ -403,27 +466,63 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   function buildHoursBanner() {
-    const done = !!hoursToday
-    const netH = done
-      ? Math.max(0, Number(hoursToday.hours_worked) - Number(hoursToday.break_minutes) / 60).toFixed(1)
-      : null
-    const bg = done ? '#27AE60' : 'var(--terracotta)'
+    const done   = !!hoursToday
+    const active = !!clockInTime && selectedDate === localDate()
+
+    if (!done) {
+      return `
+        <button id="btn-hours-banner" style="
+          display:flex;align-items:center;justify-content:space-between;
+          width:100%;padding:14px 18px;margin-bottom:20px;
+          border:none;border-radius:var(--radius-md);cursor:pointer;
+          background:var(--terracotta);color:#fff;
+          box-shadow:0 2px 10px rgba(0,0,0,0.18);
+        ">
+          <span style="font-size:0.95rem;font-weight:700">▶ Schicht starten</span>
+          <span style="font-size:0.8rem;opacity:0.85">Tippen zum Einloggen ›</span>
+        </button>
+      `
+    }
+
+    const netH = Math.max(0, Number(hoursToday.hours_worked) - Number(hoursToday.break_minutes) / 60).toFixed(1)
+
+    if (active) {
+      const startStr = new Date(clockInTime).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      return `
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+          <button id="btn-hours-banner" style="
+            display:flex;align-items:center;justify-content:space-between;
+            width:100%;padding:14px 18px;
+            border:none;border-radius:var(--radius-md);cursor:pointer;
+            background:#27AE60;color:#fff;
+            box-shadow:0 2px 10px rgba(0,0,0,0.18);
+          ">
+            <span style="font-size:0.95rem;font-weight:700">✓ Schicht läuft seit ${startStr} Uhr</span>
+            <span style="font-size:0.8rem;opacity:0.85">${Number(hoursToday.hours_worked)} Std. geplant · Bearbeiten ›</span>
+          </button>
+          <button class="btn-early-checkout" style="
+            display:flex;align-items:center;justify-content:center;gap:8px;
+            width:100%;padding:12px 18px;
+            border:none;border-radius:var(--radius-md);cursor:pointer;
+            background:var(--gold);color:#fff;font-weight:700;font-size:0.9rem;
+            box-shadow:0 2px 10px rgba(0,0,0,0.12);
+          ">
+            ⏹ Früher Feierabend machen
+          </button>
+        </div>
+      `
+    }
+
     return `
       <button id="btn-hours-banner" style="
         display:flex;align-items:center;justify-content:space-between;
         width:100%;padding:14px 18px;margin-bottom:20px;
         border:none;border-radius:var(--radius-md);cursor:pointer;
-        background:${bg};color:#fff;
+        background:#27AE60;color:#fff;
         box-shadow:0 2px 10px rgba(0,0,0,0.18);
       ">
-        <span style="font-size:0.95rem;font-weight:700">
-          ${done ? '✓ Arbeitszeit erfasst' : '⚠ Arbeitszeit noch nicht erfasst – Jetzt eintragen!'}
-        </span>
-        <span style="font-size:0.8rem;opacity:0.85">
-          ${done
-            ? `${Number(hoursToday.hours_worked)} Std. · ${Number(hoursToday.break_minutes)} Min. Pause · ${netH} Std. Netto`
-            : 'Pflicht ›'}
-        </span>
+        <span style="font-size:0.95rem;font-weight:700">✓ Arbeitszeit erfasst</span>
+        <span style="font-size:0.8rem;opacity:0.85">${Number(hoursToday.hours_worked)} Std. · ${Number(hoursToday.break_minutes)} Min. Pause · ${netH} Std. Netto</span>
       </button>
     `
   }
@@ -456,7 +555,7 @@ export function DailyCheckout({ user, onNavigate }) {
     const isNS     = existingLog?.is_no_show ?? false
     const upsell   = existingLog?.upsell_amount ?? 0
     const tip      = existingLog?.tip ?? 0
-    const curPay   = existingLog?.payment_method ?? 'bar'
+    const curPay   = existingLog?.payment_method ?? ''
     const curEmpId = existingLog?.employee_id ?? user.id
 
     // Mutable active treatment — changes when manager picks different one in edit mode
@@ -501,7 +600,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
           <!-- Payment method -->
           <div>
-            <div style="font-size:0.85rem;color:var(--text-mid);margin-bottom:6px">Zahlungsart</div>
+            <div style="font-size:0.85rem;color:var(--text-mid);margin-bottom:6px">Zahlungsart${!existingLog ? ' <span style="color:var(--terracotta);font-weight:700">*</span>' : ''}</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px">
               ${PAYMENT_METHODS.map(({ value, label }) => {
                 const active = curPay === value
@@ -566,6 +665,16 @@ export function DailyCheckout({ user, onNavigate }) {
 
     // Payment button toggle
     let selectedPayment = curPay
+    const saveBtn = overlay.querySelector('#modal-save')
+
+    function syncSaveBtn() {
+      const valid = !!selectedPayment
+      saveBtn.style.opacity       = valid ? '1' : '0.45'
+      saveBtn.style.cursor        = valid ? '' : 'not-allowed'
+      saveBtn.style.pointerEvents = valid ? '' : 'none'
+    }
+    if (!existingLog) syncSaveBtn()  // new entries start locked
+
     overlay.querySelectorAll('.pay-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         selectedPayment = btn.dataset.pay
@@ -576,6 +685,7 @@ export function DailyCheckout({ user, onNavigate }) {
           b.style.fontWeight  = on ? '600'              : '400'
           b.style.color       = on ? 'var(--aubergine)' : 'var(--text-mid)'
         })
+        if (!existingLog) syncSaveBtn()
       })
     })
 
@@ -599,6 +709,10 @@ export function DailyCheckout({ user, onNavigate }) {
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
     overlay.querySelector('#modal-save').addEventListener('click', async () => {
+      if (!existingLog && !selectedPayment) {
+        alert('Bitte wähle eine Zahlungsart (Bar, EC, PayPal...) aus, bevor du speicherst!')
+        return
+      }
       const ns    = nsCheckbox.checked
       const u     = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
       const t     = ns ? 0 : Math.max(0, parseFloat(tipInput.value) || 0)
@@ -915,8 +1029,17 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
-    container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursModal())
-    container.querySelector('#btn-hours-banner')?.addEventListener('click', () => openHoursModal())
+    container.querySelector('#btn-log-hours')?.addEventListener('click', () => {
+      if (!hoursToday) openClockInModal()
+      else openHoursModal()
+    })
+    container.querySelector('#btn-hours-banner')?.addEventListener('click', () => {
+      if (!hoursToday) openClockInModal()
+      else openHoursModal()
+    })
+    container.querySelectorAll('.btn-early-checkout').forEach(btn => {
+      btn.addEventListener('click', () => earlyCheckOut())
+    })
 
     container.querySelectorAll('.btn-edit-log[data-id]').forEach(btn => {
       btn.addEventListener('click', () => {

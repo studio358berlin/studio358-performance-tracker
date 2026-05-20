@@ -163,7 +163,11 @@ export function StudioAdmin({ user }) {
       const status = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'NO-SHOW' : 'OK'
       return `${date};${emp};${treat};${price};${upsell};${tip};${method};${status}`
     })
-    triggerDownload([header, ...rows].join('\n'), `umsatz_${reportYear}_${mm}.csv`)
+    const active   = reportLogs.filter(l => !l.is_cancelled)
+    const sumPrice = active.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
+    const sumTip   = active.reduce((s, l) => s + Number(l.tip    ?? 0), 0)
+    const sumLine  = `GESAMTSUMME;;;${sumPrice.toFixed(2).replace('.', ',')} €;;${sumTip.toFixed(2).replace('.', ',')} €;;`
+    triggerDownload([header, ...rows, '', sumLine].join('\n'), `umsatz_${reportYear}_${mm}.csv`)
   }
 
   function downloadHoursCsv() {
@@ -177,7 +181,11 @@ export function StudioAdmin({ user }) {
       const net    = Math.max(0, Number(h.hours_worked ?? 0) - Number(h.break_minutes ?? 0) / 60).toFixed(2).replace('.', ',')
       return `${date};${emp};${worked};${pause};${net}`
     })
-    triggerDownload([header, ...rows].join('\n'), `stunden_${reportYear}_${mm}.csv`)
+    const sumBrutto = reportHours.reduce((s, h) => s + Number(h.hours_worked  ?? 0), 0)
+    const sumPause  = reportHours.reduce((s, h) => s + Number(h.break_minutes ?? 0), 0)
+    const sumNetto  = reportHours.reduce((s, h) => s + Math.max(0, Number(h.hours_worked ?? 0) - Number(h.break_minutes ?? 0) / 60), 0)
+    const sumLine   = `GESAMTSUMME;;${sumBrutto.toFixed(2).replace('.', ',')} Std;${sumPause} Min;${sumNetto.toFixed(2).replace('.', ',')} Std`
+    triggerDownload([header, ...rows, '', sumLine].join('\n'), `stunden_${reportYear}_${mm}.csv`)
   }
 
   // ── HTML ──────────────────────────────────────────────────────────────────────
