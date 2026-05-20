@@ -433,6 +433,157 @@ export function RevenueAnalytics({ user }) {
     `
   }
 
+  // ── Controlling Master Export (4 Blocks) ─────────────────────────────────
+
+  async function downloadControllingCsv(btn) {
+    const { from, to, label } = dateRange()
+    const origText = btn.textContent
+    btn.disabled = true
+    btn.textContent = 'Lade Daten…'
+
+    let q = supabase
+      .from('daily_revenue_logs')
+      .select('*')
+      .gte('created_at', from)
+      .lte('created_at', to)
+      .order('created_at', { ascending: true })
+
+    if (selectedLocationId && selectedLocationId !== 'all') {
+      q = q.eq('location_id', selectedLocationId)
+    }
+
+    const { data: allData } = await q
+    btn.disabled = false
+    btn.textContent = origText
+
+    const all       = allData ?? []
+    const active    = all.filter(l => !l.is_cancelled && !l.is_no_show)
+    const cancelled = all.filter(l =>  l.is_cancelled)
+
+    const PAYMENT_KEYS   = ['bar', 'ec', 'paypal', 'online', 'gutschein']
+    const PAYMENT_LABELS = { bar: 'Bar', ec: 'EC-Karte', paypal: 'PayPal', online: 'Online vorab', gutschein: 'Gutschein' }
+
+    const fmtCur = n => Number(n ?? 0).toFixed(2).replace('.', ',')
+    const q_     = s => `"${String(s ?? '').replace(/"/g, '""')}"`
+
+    const lines = []
+
+    // ── BLOCK 1: KASSEN- & TRINKGELD-AUDIT ─────────────────────────────────
+    lines.push('BLOCK 1 – KASSEN- & TRINKGELD-AUDIT')
+    lines.push('Zahlungsart;Umsatz (€);Trinkgeld (€)')
+
+    const byPay    = {}
+    const tipByPay = {}
+    PAYMENT_KEYS.forEach(k => { byPay[k] = 0; tipByPay[k] = 0 })
+
+    active.forEach(l => {
+      const pm = l.payment_method ?? 'bar'
+      if (l.payment_method_2) {
+        byPay[pm]                 = (byPay[pm]                 ?? 0) + Number(l.amount_method_1 ?? 0)
+        byPay[l.payment_method_2] = (byPay[l.payment_method_2] ?? 0) + Number(l.amount_method_2 ?? 0)
+      } else {
+        byPay[pm] = (byPay[pm] ?? 0) + Number(l.revenue ?? 0)
+      }
+      tipByPay[pm] = (tipByPay[pm] ?? 0) + Number(l.tip ?? 0)
+    })
+
+    PAYMENT_KEYS.forEach(k => {
+      lines.push(`${PAYMENT_LABELS[k]};${fmtCur(byPay[k])};${fmtCur(tipByPay[k])}`)
+    })
+
+    const totalRev  = active.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
+    const totalTip  = active.reduce((s, l) => s + Number(l.tip    ?? 0), 0)
+    const cancelVol = cancelled.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
+
+    lines.push('')
+    lines.push(`GESAMTSUMME UMSATZ;${fmtCur(totalRev)};`)
+    lines.push(`GESAMTSUMME TRINKGELD;;${fmtCur(totalTip)}`)
+    lines.push(`Anzahl Stornos;${cancelled.length};`)
+    lines.push(`Storniertes Volumen;${fmtCur(cancelVol)};`)
+    lines.push('')
+    lines.push('')
+
+    // ── BLOCK 2: SERVICE-PERFORMANCE MATRIX ────────────────────────────────
+    lines.push('BLOCK 2 – SERVICE-PERFORMANCE MATRIX')
+    lines.push('Behandlung;Anzahl Behandlungen;Gesamtumsatz (€);Ø-Umsatz pro Behandlung (€)')
+
+    const bySvc = {}
+    active.forEach(l => {
+      const name = treatName(l.treatment_id)
+      if (!bySvc[name]) bySvc[name] = { count: 0, revenue: 0 }
+      bySvc[name].count++
+      bySvc[name].revenue += Number(l.revenue ?? 0)
+    })
+
+    Object.entries(bySvc)
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .forEach(([name, v]) => {
+        const avg = v.count > 0 ? v.revenue / v.count : 0
+        lines.push(`${q_(name)};${v.count};${fmtCur(v.revenue)};${fmtCur(avg)}`)
+      })
+
+    lines.push('')
+    lines.push('')
+
+    // ── BLOCK 3: MITARBEITER-ERFOLGSMATRIX ─────────────────────────────────
+    lines.push('BLOCK 3 – MITARBEITER-ERFOLGSMATRIX')
+    lines.push('Mitarbeiter;Anzahl Behandlungen;Gesamtumsatz (€);Ø-Umsatz pro Kunde (€);Trinkgeld Gesamt (€)')
+
+    const byEmpMap = {}
+    active.forEach(l => {
+      const name = empName(l.employee_id)
+      if (!byEmpMap[name]) byEmpMap[name] = { count: 0, revenue: 0, tips: 0 }
+      byEmpMap[name].count++
+      byEmpMap[name].revenue += Number(l.revenue ?? 0)
+      byEmpMap[name].tips    += Number(l.tip    ?? 0)
+    })
+
+    Object.entries(byEmpMap)
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .forEach(([name, v]) => {
+        const avg = v.count > 0 ? v.revenue / v.count : 0
+        lines.push(`${q_(name)};${v.count};${fmtCur(v.revenue)};${fmtCur(avg)};${fmtCur(v.tips)}`)
+      })
+
+    lines.push('')
+    lines.push('')
+
+    // ── BLOCK 4: RECHTLICHE BUCHUNGSLISTE (ROHDATEN) ────────────────────────
+    lines.push('BLOCK 4 – RECHTLICHE BUCHUNGSLISTE (ROHDATEN)')
+    lines.push('Datum & Uhrzeit;Studio/Standort;Mitarbeiter;Behandlung;Gesamtpreis (€);Zahlungsart 1;Betrag 1 (€);Zahlungsart 2;Betrag 2 (€);Trinkgeld (€);Status')
+
+    all.forEach(l => {
+      const d   = new Date(l.created_at)
+      const dt  = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                + ' '
+                + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      const loc    = locName(l.location_id)
+      const emp    = empName(l.employee_id)
+      const treat  = treatName(l.treatment_id)
+      const price  = fmtCur(l.revenue ?? 0)
+      const pm1    = PAYMENT_LABELS[l.payment_method ?? 'bar'] ?? (l.payment_method ?? '–')
+      const amt1   = l.payment_method_2 ? fmtCur(l.amount_method_1 ?? 0) : price
+      const pm2    = l.payment_method_2 ? (PAYMENT_LABELS[l.payment_method_2] ?? l.payment_method_2) : ''
+      const amt2   = l.payment_method_2 ? fmtCur(l.amount_method_2 ?? 0) : ''
+      const tip    = fmtCur(l.tip ?? 0)
+      const status = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'No-Show' : 'Aktiv'
+
+      lines.push(`${q_(dt)};${q_(loc)};${q_(emp)};${q_(treat)};${price};${pm1};${amt1};${pm2};${amt2};${tip};${status}`)
+    })
+
+    // ── Download ────────────────────────────────────────────────────────────
+    const csv  = '﻿' + lines.join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `controlling_${label.replace(/[^\wäöüÄÖÜ-]/g, '_')}_${localDate()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // ── Main HTML ─────────────────────────────────────────────────────────────
 
   function buildHTML() {
@@ -445,6 +596,7 @@ export function RevenueAnalytics({ user }) {
           <h2>Umsatz-Analytics</h2>
           <p style="color:var(--text-light);font-size:0.875rem">Manager-Übersicht · ${label}</p>
         </div>
+        <button class="btn btn-sm btn-accent" id="export-csv-btn">↓ Controlling-Export (.CSV)</button>
       </div>
 
       <!-- Filter bar -->
@@ -529,6 +681,9 @@ export function RevenueAnalytics({ user }) {
   }
 
   function attachEvents() {
+    const exportBtn = container.querySelector('#export-csv-btn')
+    if (exportBtn) exportBtn.addEventListener('click', () => downloadControllingCsv(exportBtn))
+
     container.querySelectorAll('.location-tab[data-period]').forEach(btn => {
       btn.addEventListener('click', async () => {
         period = btn.dataset.period
