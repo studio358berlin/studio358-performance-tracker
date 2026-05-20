@@ -60,6 +60,7 @@ export function RevenueAnalytics({ user }) {
     let q = supabase
       .from('daily_revenue_logs')
       .select('*')
+      .eq('is_cancelled', false)
       .gte('created_at', from)
       .lte('created_at', to)
 
@@ -112,8 +113,9 @@ export function RevenueAnalytics({ user }) {
   // ── KPI calculations ──────────────────────────────────────────────────────
 
   function filteredLogs() {
-    if (!selectedEmployeeId) return logs
-    return logs.filter(l => l.employee_id === selectedEmployeeId)
+    const active = logs.filter(l => !l.is_cancelled)
+    if (!selectedEmployeeId) return active
+    return active.filter(l => l.employee_id === selectedEmployeeId)
   }
 
   function kpis() {
