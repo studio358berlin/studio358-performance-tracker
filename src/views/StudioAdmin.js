@@ -151,22 +151,30 @@ export function StudioAdmin({ user }) {
 
   function downloadRevenueCsv() {
     const mm     = String(reportMonth).padStart(2, '0')
-    const header = 'Datum;Mitarbeiter;Behandlung;Preis (€);Upsell (€);Trinkgeld (€);Zahlungsart;Status'
+    const header = 'Datum;Mitarbeiter;Behandlung;Preis (€);Upsell (€);Trinkgeld (€);Zahlungsart;Status;Zahlungsart 1;Betrag 1 (€);Zahlungsart 2;Betrag 2 (€)'
     const rows   = reportLogs.map(l => {
-      const date   = new Date(l.created_at).toLocaleDateString('de-DE')
-      const emp    = (l.employee?.full_name ?? '–').replace(/;/g, ',')
-      const treat  = (l.treatment?.name    ?? '–').replace(/;/g, ',')
-      const price  = Number(l.revenue      ?? 0).toFixed(2).replace('.', ',')
-      const upsell = Number(l.upsell_amount ?? 0).toFixed(2).replace('.', ',')
-      const tip    = Number(l.tip           ?? 0).toFixed(2).replace('.', ',')
-      const method = l.payment_method ?? '–'
-      const status = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'NO-SHOW' : 'OK'
-      return `${date};${emp};${treat};${price};${upsell};${tip};${method};${status}`
+      const date    = new Date(l.created_at).toLocaleDateString('de-DE')
+      const emp     = (l.employee?.full_name ?? '–').replace(/;/g, ',')
+      const treat   = (l.treatment?.name    ?? '–').replace(/;/g, ',')
+      const price   = Number(l.revenue      ?? 0).toFixed(2).replace('.', ',')
+      const upsell  = Number(l.upsell_amount ?? 0).toFixed(2).replace('.', ',')
+      const tip     = Number(l.tip           ?? 0).toFixed(2).replace('.', ',')
+      const method  = l.payment_method ?? '–'
+      const status  = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'NO-SHOW' : 'OK'
+      const method1 = l.payment_method ?? '–'
+      const amt1    = l.payment_method_2
+        ? Number(l.amount_method_1 ?? 0).toFixed(2).replace('.', ',')
+        : price
+      const method2 = l.payment_method_2 ?? ''
+      const amt2    = l.payment_method_2
+        ? Number(l.amount_method_2 ?? 0).toFixed(2).replace('.', ',')
+        : '0,00'
+      return `${date};${emp};${treat};${price};${upsell};${tip};${method};${status};${method1};${amt1};${method2};${amt2}`
     })
     const active   = reportLogs.filter(l => !l.is_cancelled)
     const sumPrice = active.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
     const sumTip   = active.reduce((s, l) => s + Number(l.tip    ?? 0), 0)
-    const sumLine  = `GESAMTSUMME;;;${sumPrice.toFixed(2).replace('.', ',')} €;;${sumTip.toFixed(2).replace('.', ',')} €;;`
+    const sumLine  = `GESAMTSUMME;;;${sumPrice.toFixed(2).replace('.', ',')} €;;${sumTip.toFixed(2).replace('.', ',')} €;;;;;;`
     triggerDownload([header, ...rows, '', sumLine].join('\n'), `umsatz_${reportYear}_${mm}.csv`)
   }
 

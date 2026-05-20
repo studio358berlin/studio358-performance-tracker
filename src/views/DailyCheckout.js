@@ -160,15 +160,18 @@ export function DailyCheckout({ user, onNavigate }) {
     const employeeId = data.employee_id ?? user.id
 
     const payload = {
-      employee_id:    employeeId,
-      location_id:    selectedLocationId,
-      treatment_id:   data.treatment_id,
+      employee_id:      employeeId,
+      location_id:      selectedLocationId,
+      treatment_id:     data.treatment_id,
       revenue,
-      upsell_amount:  upsell,
+      upsell_amount:    upsell,
       tip,
-      is_no_show:     isNoShow,
-      payment_method: data.payment_method ?? 'bar',
-      created_by:     user.id,
+      is_no_show:       isNoShow,
+      payment_method:   data.payment_method ?? 'bar',
+      created_by:       user.id,
+      payment_method_2: data.payment_method_2 ?? null,
+      amount_method_1:  data.amount_method_1  ?? revenue,
+      amount_method_2:  data.amount_method_2  ?? 0,
     }
 
     let error
@@ -530,10 +533,11 @@ export function DailyCheckout({ user, onNavigate }) {
   // ── Modal ─────────────────────────────────────────────────────────────────────
 
   const PAYMENT_METHODS = [
-    { value: 'bar',    label: 'Bar'          },
-    { value: 'ec',     label: 'EC-Karte'     },
-    { value: 'paypal', label: 'PayPal'        },
-    { value: 'online', label: 'Online vorab' },
+    { value: 'bar',       label: 'Bar'          },
+    { value: 'ec',        label: 'EC-Karte'     },
+    { value: 'paypal',    label: 'PayPal'        },
+    { value: 'online',    label: 'Online vorab' },
+    { value: 'gutschein', label: 'Gutschein'    },
   ]
 
   function openModal(treatment, existingLog = null) {
@@ -610,6 +614,29 @@ export function DailyCheckout({ user, onNavigate }) {
                 </button>`
               }).join('')}
             </div>
+            <button type="button" id="btn-split-toggle" style="margin-top:10px;background:none;border:1px dashed var(--cream-dark);border-radius:var(--radius-sm);padding:6px 12px;font-size:0.78rem;color:var(--text-mid);cursor:pointer;width:100%;text-align:left;transition:all 0.15s">
+              ➔ Zahlung aufteilen (Split)
+            </button>
+            <div id="split-section" style="display:none">
+              <div style="margin-top:10px;padding:12px;background:var(--cream);border-radius:var(--radius-sm);display:flex;flex-direction:column;gap:10px">
+                <div style="display:grid;grid-template-columns:1fr 100px;gap:8px;align-items:center">
+                  <span style="font-size:0.82rem;color:var(--text-mid)">Betrag Zahlungsart 1 (€)</span>
+                  <input id="split-amt-1" type="number" min="0" step="0.01" value="0"
+                    style="padding:7px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;text-align:right;font-weight:600">
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <span style="font-size:0.82rem;color:var(--text-mid)">Zahlungsart 2 <span style="color:var(--terracotta);font-weight:700">*</span></span>
+                  <div style="display:grid;grid-template-columns:1fr 100px;gap:8px;align-items:center">
+                    <select id="split-method-2" style="padding:8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.87rem;background:var(--white);color:var(--aubergine)">
+                      <option value="">-- Bitte wählen --</option>
+                      ${PAYMENT_METHODS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}
+                    </select>
+                    <input id="split-amt-2" type="number" min="0" step="0.01" value="0" readonly
+                      style="padding:7px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;text-align:right;background:var(--cream-dark);color:var(--text-mid);font-weight:600">
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Upsell -->
@@ -655,6 +682,12 @@ export function DailyCheckout({ user, onNavigate }) {
     const revVal       = overlay.querySelector('#modal-rev-val')
     const priceVal     = overlay.querySelector('#modal-price-val')
     const treatSelect  = overlay.querySelector('#modal-treatment')
+    const splitSection = overlay.querySelector('#split-section')
+    const splitToggle  = overlay.querySelector('#btn-split-toggle')
+    const splitAmt1    = overlay.querySelector('#split-amt-1')
+    const splitAmt2    = overlay.querySelector('#split-amt-2')
+    const splitMethod2 = overlay.querySelector('#split-method-2')
+    let splitActive    = !!existingLog?.payment_method_2
 
     // Treatment switcher (edit + manager only): sync price badge + revenue preview
     treatSelect?.addEventListener('change', () => {
@@ -705,6 +738,50 @@ export function DailyCheckout({ user, onNavigate }) {
     nsCheckbox.addEventListener('change', updatePreview)
     upsellInput.addEventListener('input', updatePreview)
 
+    // Split payment logic
+    function getTotalForSplit() {
+      const ns = nsCheckbox.checked
+      if (ns) return 0
+      const u = Math.max(0, parseFloat(upsellInput.value) || 0)
+      return (activeTreatment.price ?? 0) + u
+    }
+
+    function autoCalcAmt2() {
+      if (!splitActive || !splitAmt1 || !splitAmt2) return
+      const total = getTotalForSplit()
+      const a1    = Math.max(0, parseFloat(splitAmt1.value) || 0)
+      splitAmt2.value = Math.max(0, total - a1).toFixed(2)
+    }
+
+    splitToggle?.addEventListener('click', () => {
+      splitActive = !splitActive
+      splitSection.style.display    = splitActive ? 'block' : 'none'
+      splitToggle.textContent       = splitActive ? '✖ Splitzahlung aktiv' : '➔ Zahlung aufteilen (Split)'
+      splitToggle.style.background  = splitActive ? 'rgba(181,87,58,0.08)' : 'none'
+      splitToggle.style.color       = splitActive ? 'var(--terracotta)' : 'var(--text-mid)'
+      splitToggle.style.borderColor = splitActive ? 'var(--terracotta)' : 'var(--cream-dark)'
+      if (splitActive) {
+        const total = getTotalForSplit()
+        splitAmt1.value = total.toFixed(2)
+        splitAmt2.value = '0.00'
+      }
+    })
+    splitAmt1?.addEventListener('input', autoCalcAmt2)
+    upsellInput.addEventListener('input', autoCalcAmt2)
+    nsCheckbox.addEventListener('change', autoCalcAmt2)
+
+    // Pre-fill split section when editing a split payment
+    if (splitActive && splitSection) {
+      splitSection.style.display    = 'block'
+      splitToggle.textContent       = '✖ Splitzahlung aktiv'
+      splitToggle.style.background  = 'rgba(181,87,58,0.08)'
+      splitToggle.style.color       = 'var(--terracotta)'
+      splitToggle.style.borderColor = 'var(--terracotta)'
+      if (existingLog?.amount_method_1 != null) splitAmt1.value = Number(existingLog.amount_method_1).toFixed(2)
+      if (existingLog?.amount_method_2 != null) splitAmt2.value = Number(existingLog.amount_method_2).toFixed(2)
+      if (splitMethod2 && existingLog?.payment_method_2) splitMethod2.value = existingLog.payment_method_2
+    }
+
     overlay.querySelector('#modal-close').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
@@ -720,21 +797,45 @@ export function DailyCheckout({ user, onNavigate }) {
 
       if (u < 0 || t < 0) { showToast('Keine negativen Beträge.', 'error'); return }
 
-      const saveBtn = overlay.querySelector('#modal-save')
-      saveBtn.disabled = true
-      saveBtn.textContent = 'Speichern...'
+      // Split validation
+      const totalRev = ns ? 0 : (activeTreatment.price ?? 0) + u
+      let splitM2 = null, splitA1 = totalRev, splitA2 = 0
+      if (splitActive) {
+        splitM2 = splitMethod2?.value || null
+        splitA1 = parseFloat(splitAmt1?.value) || 0
+        splitA2 = parseFloat(splitAmt2?.value) || 0
+        if (!splitM2) {
+          alert('Bitte wähle eine zweite Zahlungsart für die Splitzahlung aus.')
+          return
+        }
+        if (splitM2 === selectedPayment) {
+          alert('Beide Zahlungsarten dürfen nicht identisch sein.')
+          return
+        }
+        if (Math.abs(splitA1 + splitA2 - totalRev) > 0.01) {
+          alert(`Die Teilbeträge (${(splitA1 + splitA2).toFixed(2).replace('.', ',')} €) müssen zusammen dem Gesamtpreis (${totalRev.toFixed(2).replace('.', ',')} €) entsprechen.`)
+          return
+        }
+      }
+
+      const saveBtnEl = overlay.querySelector('#modal-save')
+      saveBtnEl.disabled = true
+      saveBtnEl.textContent = 'Speichern...'
 
       const ok = await saveLog({
-        treatment_id:   activeTreatment.id,
-        upsell_amount:  u,
-        tip:            t,
-        is_no_show:     ns,
-        payment_method: selectedPayment,
-        employee_id:    empId,
+        treatment_id:     activeTreatment.id,
+        upsell_amount:    u,
+        tip:              t,
+        is_no_show:       ns,
+        payment_method:   selectedPayment,
+        employee_id:      empId,
+        payment_method_2: splitM2,
+        amount_method_1:  splitA1,
+        amount_method_2:  splitA2,
       }, existingLog?.id)
 
       if (ok) overlay.remove()
-      else { saveBtn.disabled = false; saveBtn.textContent = 'Speichern' }
+      else { saveBtnEl.disabled = false; saveBtnEl.textContent = 'Speichern' }
     })
 
     overlay.querySelector('#modal-delete')?.addEventListener('click', () => {
@@ -748,15 +849,23 @@ export function DailyCheckout({ user, onNavigate }) {
   function buildKassensturz() {
     if (!isManager) return ''
     const METHODS = [
-      { key: 'bar',    label: 'Bar'          },
-      { key: 'ec',     label: 'EC-Karte'     },
-      { key: 'paypal', label: 'PayPal'        },
-      { key: 'online', label: 'Online vorab' },
+      { key: 'bar',       label: 'Bar'          },
+      { key: 'ec',        label: 'EC-Karte'     },
+      { key: 'paypal',    label: 'PayPal'        },
+      { key: 'online',    label: 'Online vorab' },
+      { key: 'gutschein', label: 'Gutschein'    },
     ]
     const byPayment = {}
     for (const log of todayLogs.filter(l => !l.is_no_show && !l.is_cancelled)) {
-      const pm = log.payment_method ?? 'bar'
-      byPayment[pm] = (byPayment[pm] ?? 0) + Number(log.revenue)
+      if (log.payment_method_2) {
+        const pm1 = log.payment_method ?? 'bar'
+        const pm2 = log.payment_method_2
+        byPayment[pm1] = (byPayment[pm1] ?? 0) + Number(log.amount_method_1 ?? 0)
+        byPayment[pm2] = (byPayment[pm2] ?? 0) + Number(log.amount_method_2 ?? 0)
+      } else {
+        const pm = log.payment_method ?? 'bar'
+        byPayment[pm] = (byPayment[pm] ?? 0) + Number(log.revenue)
+      }
     }
     const noShowLoss = todayLogs
       .filter(l => l.is_no_show && !l.is_cancelled)
@@ -770,7 +879,7 @@ export function DailyCheckout({ user, onNavigate }) {
             ? `<span style="font-size:0.78rem;color:rgba(245,237,228,0.7);background:rgba(0,0,0,0.25);padding:3px 10px;border-radius:20px">No-Show Verlust: ${fmt(noShowLoss)}</span>`
             : `<span style="font-size:0.75rem;color:rgba(245,237,228,0.35)">Keine No-Shows</span>`}
         </div>
-        <div style="padding:0 18px 14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div style="padding:0 18px 14px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
           ${METHODS.map(({ key, label }) => {
             const total = byPayment[key] ?? 0
             return `
