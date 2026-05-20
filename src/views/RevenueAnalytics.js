@@ -11,7 +11,8 @@ export function RevenueAnalytics({ user }) {
 
   let selectedLocationId = localStorage.getItem('selectedLocationId') || user?.profile?.location_id || null
   let selectedEmployeeId = null
-  let period = 'today'   // 'today' | 'week' | 'month'
+  let period       = localStorage.getItem('analyticsPeriod') || 'today'
+  let selectedDate = localStorage.getItem('analyticsDate')   || localDate()
   let container = null
 
   // Performance matrix state
@@ -24,18 +25,31 @@ export function RevenueAnalytics({ user }) {
   // ── Date helpers ──────────────────────────────────────────────────────────
 
   function dateRange() {
-    const now   = new Date()
-    const start = new Date(now); start.setHours(0, 0, 0, 0)
-    const end   = new Date(now); end.setHours(23, 59, 59, 999)
-    if (period === 'today') return { from: start.toISOString(), to: end.toISOString(), label: 'Heute' }
-    if (period === 'week') {
-      const mon = new Date(now)
-      mon.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1))
-      mon.setHours(0, 0, 0, 0)
-      return { from: mon.toISOString(), to: end.toISOString(), label: 'Diese Woche' }
+    // anchor at noon to avoid DST edge cases
+    const anchor  = new Date(selectedDate + 'T12:00:00')
+    const start   = new Date(selectedDate + 'T00:00:00')
+    const end     = new Date(selectedDate + 'T23:59:59')
+    const fmtDate = d => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
+
+    if (period === 'today') {
+      return {
+        from:  start.toISOString(),
+        to:    end.toISOString(),
+        label: selectedDate === localDate() ? 'Heute' : fmtDate(anchor),
+      }
     }
-    const first = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
-    return { from: first.toISOString(), to: end.toISOString(), label: 'Dieser Monat' }
+    if (period === 'week') {
+      const mon = new Date(anchor)
+      mon.setDate(anchor.getDate() - (anchor.getDay() === 0 ? 6 : anchor.getDay() - 1))
+      mon.setHours(0, 0, 0, 0)
+      const sun = new Date(mon)
+      sun.setDate(mon.getDate() + 6); sun.setHours(23, 59, 59, 999)
+      return { from: mon.toISOString(), to: sun.toISOString(), label: fmtDate(mon) + ' – ' + fmtDate(sun) }
+    }
+    // month — full calendar month of the anchor date
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 0, 0, 0, 0)
+    const last  = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999)
+    return { from: first.toISOString(), to: last.toISOString(), label: first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) }
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -93,8 +107,8 @@ export function RevenueAnalytics({ user }) {
   async function loadTarget() {
     if (!selectedLocationId || selectedLocationId === 'all') { dailyTarget = 0; return }
 
-    // Check for today's override first
-    const today = new Date().toISOString().slice(0, 10)
+    // Check for a date-override first (uses selectedDate, not system clock)
+    const today = selectedDate
     const { data: override } = await supabase
       .from('daily_targets')
       .select('target_override')
@@ -440,6 +454,8 @@ export function RevenueAnalytics({ user }) {
           <button class="location-tab ${period==='week'  ? 'active':''}" data-period="week">Woche</button>
           <button class="location-tab ${period==='month' ? 'active':''}" data-period="month">Monat</button>
         </div>
+        <input type="date" id="analytics-date" value="${selectedDate}" max="${localDate()}"
+          style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
         <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
           <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
           ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
@@ -516,10 +532,17 @@ export function RevenueAnalytics({ user }) {
     container.querySelectorAll('.location-tab[data-period]').forEach(btn => {
       btn.addEventListener('click', async () => {
         period = btn.dataset.period
-        await loadLogs()
-        await loadTarget()
+        localStorage.setItem('analyticsPeriod', period)
+        await Promise.all([loadLogs(), loadTarget()])
         rerender()
       })
+    })
+
+    container.querySelector('#analytics-date')?.addEventListener('change', async e => {
+      selectedDate = e.target.value || localDate()
+      localStorage.setItem('analyticsDate', selectedDate)
+      await Promise.all([loadLogs(), loadTarget()])
+      rerender()
     })
 
     container.querySelector('#analytics-location')?.addEventListener('change', async e => {
@@ -566,6 +589,11 @@ export function RevenueAnalytics({ user }) {
   }
 
   return { render }
+}
+
+function localDate() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
 function fmt(n) {
