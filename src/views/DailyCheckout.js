@@ -11,6 +11,7 @@ export function DailyCheckout({ user, onNavigate }) {
   let container          = null
   let hoursToday         = null   // employee's own hours entry for today
   let teamHoursMap       = {}     // manager: employee_id → hours entry
+  let selectedDate       = localDate()
 
   // ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -40,8 +41,8 @@ export function DailyCheckout({ user, onNavigate }) {
       }
     }
 
-    // Load today's working-hours entries
-    const todayDate = localDate()
+    // Load working-hours entries for the selected date
+    const todayDate = selectedDate
     if (isManager) {
       const { data: hData } = await supabase
         .from('employee_daily_hours').select('*').eq('date', todayDate)
@@ -56,8 +57,8 @@ export function DailyCheckout({ user, onNavigate }) {
 
   async function fetchTodayLogs() {
     // Use local-timezone midnight/end-of-day so the filter is always correct in CET/CEST
-    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
-    const endOfDay   = new Date(); endOfDay.setHours(23, 59, 59, 999)
+    const startOfDay = new Date(selectedDate + 'T00:00:00')
+    const endOfDay   = new Date(selectedDate + 'T23:59:59')
     let query = supabase
       .from('daily_revenue_logs')
       .select('*, treatment:treatment_id(name, price, duration), employee:employee_id(full_name)')
@@ -110,6 +111,10 @@ export function DailyCheckout({ user, onNavigate }) {
   async function saveLog(data, logId = null) {
     if (selectedLocationId === 'all') {
       showToast('Bitte zuerst einen konkreten Standort auswählen.', 'error')
+      return false
+    }
+    if (!logId && selectedDate !== localDate()) {
+      showToast('Historische Ansicht – neue Einträge nur für heute möglich.', 'error')
       return false
     }
     const treatment  = treatments.find(t => t.id === data.treatment_id)
@@ -187,6 +192,20 @@ export function DailyCheckout({ user, onNavigate }) {
 
   async function refreshLogs() {
     todayLogs = await fetchTodayLogs()
+    rerender()
+  }
+
+  async function refreshDay() {
+    todayLogs = await fetchTodayLogs()
+    const dt = selectedDate
+    if (isManager) {
+      const { data: hData } = await supabase.from('employee_daily_hours').select('*').eq('date', dt)
+      teamHoursMap = Object.fromEntries((hData ?? []).map(h => [h.employee_id, h]))
+    } else {
+      const { data: hData } = await supabase.from('employee_daily_hours').select('*')
+        .eq('employee_id', user.id).eq('date', dt).maybeSingle()
+      hoursToday = hData ?? null
+    }
     rerender()
   }
 
@@ -686,19 +705,26 @@ export function DailyCheckout({ user, onNavigate }) {
       <div class="page-header">
         <div>
           <h2>Tagesabschluss</h2>
-          <p style="color:var(--text-light);font-size:0.875rem">${new Date().toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long' })}</p>
+          <p style="color:var(--text-light);font-size:0.875rem">${new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long' })}${selectedDate !== localDate() ? ' · Historische Ansicht' : ''}</p>
         </div>
       </div>
 
       ${!isManager ? buildHoursBanner() : ''}
 
       ${isManager ? `
-        <div style="margin-bottom:16px">
-          <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
-          <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:220px">
-            <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte (Gesamtbilanz)</option>
-            ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
-          </select>
+        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+          <div>
+            <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
+            <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:220px">
+              <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte (Gesamtbilanz)</option>
+              ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Datum</label>
+            <input type="date" id="date-picker" value="${selectedDate}" max="${localDate()}"
+              style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
+          </div>
         </div>
       ` : ''}
 
@@ -724,7 +750,12 @@ export function DailyCheckout({ user, onNavigate }) {
 
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Behandlung erfassen</h4></div>
-        ${selectedLocationId === 'all' ? `
+        ${selectedDate !== localDate() ? `
+          <div class="empty-state" style="padding:28px 20px">
+            <span class="empty-state-icon">◉</span>
+            <p style="color:var(--text-mid)">Historische Ansicht – neue Einträge können nur für heute erfasst werden.</p>
+          </div>
+        ` : selectedLocationId === 'all' ? `
           <div class="empty-state" style="padding:28px 20px">
             <span class="empty-state-icon">◉</span>
             <p style="color:var(--text-mid)">Für das Erfassen bitte einen konkreten Standort auswählen.</p>
@@ -809,6 +840,11 @@ export function DailyCheckout({ user, onNavigate }) {
       selectedLocationId = e.target.value || 'all'  // never null — 'all' = no filter
       todayLogs = await fetchTodayLogs()
       rerender()
+    })
+
+    container.querySelector('#date-picker')?.addEventListener('change', async e => {
+      selectedDate = e.target.value || localDate()
+      await refreshDay()
     })
 
     container.querySelectorAll('.btn-treatment[data-id]').forEach(btn => {

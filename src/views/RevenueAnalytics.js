@@ -18,20 +18,24 @@ export function RevenueAnalytics({ user }) {
   const _now   = new Date()
   let perfYear  = _now.getFullYear()
   let perfMonth = _now.getMonth() + 1
-  let perfData  = []   // rows from get_employee_performance RPC
+  let perfData        = []   // rows from get_employee_performance RPC
+  let topServicesData = []   // rows from get_top_services_analysis RPC
 
   // ── Date helpers ──────────────────────────────────────────────────────────
 
   function dateRange() {
     const now   = new Date()
-    const today = now.toISOString().slice(0, 10)
-    if (period === 'today') return { from: today + 'T00:00:00', to: today + 'T23:59:59', label: 'Heute' }
+    const start = new Date(now); start.setHours(0, 0, 0, 0)
+    const end   = new Date(now); end.setHours(23, 59, 59, 999)
+    if (period === 'today') return { from: start.toISOString(), to: end.toISOString(), label: 'Heute' }
     if (period === 'week') {
-      const mon = new Date(now); mon.setDate(now.getDate() - now.getDay() + 1)
-      return { from: mon.toISOString().slice(0, 10) + 'T00:00:00', to: today + 'T23:59:59', label: 'Diese Woche' }
+      const mon = new Date(now)
+      mon.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1))
+      mon.setHours(0, 0, 0, 0)
+      return { from: mon.toISOString(), to: end.toISOString(), label: 'Diese Woche' }
     }
-    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    return { from: firstOfMonth.toISOString().slice(0, 10) + 'T00:00:00', to: today + 'T23:59:59', label: 'Dieser Monat' }
+    const first = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+    return { from: first.toISOString(), to: end.toISOString(), label: 'Dieser Monat' }
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -48,7 +52,7 @@ export function RevenueAnalytics({ user }) {
 
     // null → 'all' for managers without an assigned location
     if (!selectedLocationId) selectedLocationId = 'all'
-    await Promise.all([loadLogs(), loadTarget(), loadPerfData()])
+    await Promise.all([loadLogs(), loadTarget(), loadPerfData(), loadTopServices()])
   }
 
   async function loadLogs() {
@@ -74,6 +78,15 @@ export function RevenueAnalytics({ user }) {
     })
     if (error) console.error('[RevenueAnalytics] get_employee_performance:', error.message)
     perfData = data ?? []
+  }
+
+  async function loadTopServices() {
+    const { data, error } = await supabase.rpc('get_top_services_analysis', {
+      target_year:  perfYear,
+      target_month: perfMonth,
+    })
+    if (error) console.error('[RevenueAnalytics] get_top_services_analysis:', error.message)
+    topServicesData = data ?? []
   }
 
   async function loadTarget() {
@@ -248,22 +261,25 @@ export function RevenueAnalytics({ user }) {
     `
   }
 
-  // ── Service-Frequenz bar chart ────────────────────────────────────────────
+  // ── Top Services bar chart (RPC: get_top_services_analysis) ─────────────
 
-  function buildFrequencyChart(byTreatment) {
-    const entries = Object.entries(byTreatment).sort((a, b) => b[1] - a[1])
-    if (!entries.length) return `<div class="empty-state"><span class="empty-state-icon">◉</span><p>Keine Behandlungsdaten.</p></div>`
-
-    const max = entries[0][1]
-    return entries.map(([id, count]) => {
-      const pct = max > 0 ? (count / max) * 100 : 0
+  function buildTopServicesChart() {
+    if (!topServicesData.length) {
+      return `<div class="empty-state"><span class="empty-state-icon">◉</span><p>Keine Behandlungsdaten für diesen Monat.</p></div>`
+    }
+    const max = Math.max(...topServicesData.map(r => Number(r.count ?? r.total_count ?? 0)), 1)
+    return topServicesData.map(row => {
+      const count   = Number(row.count ?? row.total_count ?? 0)
+      const pct     = (count / max) * 100
+      const name    = row.treatment_name ?? row.name ?? '–'
+      const revenue = fmt(row.total_revenue ?? 0)
       return `
-        <div style="display:grid;grid-template-columns:140px 1fr 36px;align-items:center;gap:10px;margin-bottom:10px">
-          <span class="freq-label" style="width:140px;font-size:0.82rem;color:var(--text-mid);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${treatName(id)}</span>
+        <div style="display:grid;grid-template-columns:140px 1fr auto;align-items:center;gap:10px;margin-bottom:10px">
+          <span style="font-size:0.82rem;color:var(--text-mid);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${name}">${name}</span>
           <div style="background:var(--cream-dark);border-radius:4px;height:10px;overflow:hidden">
             <div style="width:${pct}%;height:100%;background:var(--aubergine);border-radius:4px;transition:width 0.4s ease"></div>
           </div>
-          <span style="font-size:0.82rem;font-weight:600;color:var(--aubergine);text-align:right">${count}×</span>
+          <span style="font-size:0.82rem;font-weight:600;color:var(--aubergine);text-align:right;white-space:nowrap">${count}× · ${revenue}</span>
         </div>
       `
     }).join('')
@@ -322,7 +338,7 @@ export function RevenueAnalytics({ user }) {
     const curYear = new Date().getFullYear()
     const years   = [curYear, curYear - 1, curYear - 2]
 
-    // Frontend location filter: match employee's location via profiles lookup
+    // Frontend location filter + sort by revenue descending
     let rows = perfData.filter(r => r != null)
     if (selectedLocationId && selectedLocationId !== 'all') {
       rows = rows.filter(r => {
@@ -330,6 +346,7 @@ export function RevenueAnalytics({ user }) {
         return prof?.location_id === selectedLocationId || r.location_id === selectedLocationId
       })
     }
+    rows.sort((a, b) => Number(b.total_revenue ?? b.revenue ?? 0) - Number(a.total_revenue ?? a.revenue ?? 0))
 
     const monthLabel = `${MONTHS[(perfMonth ?? 1) - 1]} ${perfYear}`
 
@@ -474,9 +491,9 @@ export function RevenueAnalytics({ user }) {
 
       <!-- Top Services -->
       <div class="card" style="margin-bottom:24px">
-        <div class="card-header"><h4>Top Services</h4><span style="font-size:0.75rem;color:var(--text-light)">${label}</span></div>
-        <div style="padding:16px 20px">
-          ${buildFrequencyChart(k.byTreatment)}
+        <div class="card-header"><h4>Top Services</h4><span style="font-size:0.75rem;color:var(--text-light)">${new Date(perfYear, perfMonth - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</span></div>
+        <div style="padding:0 0 4px">
+          ${buildTopServicesChart()}
         </div>
       </div>
 
@@ -520,7 +537,7 @@ export function RevenueAnalytics({ user }) {
       const yEl = container.querySelector('#perf-year')
       if (mEl) perfMonth = parseInt(mEl.value, 10)
       if (yEl) perfYear  = parseInt(yEl.value, 10)
-      await loadPerfData()
+      await Promise.all([loadPerfData(), loadTopServices()])
       rerender()
     }
     container.querySelector('#perf-month')?.addEventListener('change', onPerfChange)
