@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase.js'
 import { getCriteriaForLevel } from '../lib/criteria.js'
 import { calcWeightedScore } from '../lib/scoring.js'
 
-export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, latestEval = null, onSaved, onClose }) {
+export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, latestEval = null, isManager = false, onSaved, onClose }) {
   const criteria  = getCriteriaForLevel(employee.level || 'junior')
   const scores    = {}
   criteria.forEach(c => { scores[c.id] = 0 })
@@ -82,21 +82,17 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         ${!isSelfAssessment ? `
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--cream-dark)">
           <h4 style="margin-bottom:12px;font-size:0.95rem">Qualitätsdaten</h4>
+          ${isManager ? `
           <div id="period-stats-card" style="margin-bottom:14px;padding:12px 14px;background:var(--cream);border-radius:var(--radius-sm)">
-            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">Automatische 30-Tage-Bilanz</div>
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">Performance-Fakten (Letzte 30 Tage)</div>
             <div id="period-stats-body" style="font-size:0.85rem;color:var(--text-mid)">Lade Daten…</div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Termine im Zeitraum <span style="font-size:0.7rem;color:var(--text-light)">(auto)</span></label>
-              <input class="form-input" type="number" id="appointments-count"
-                value="20" min="1" max="200" readonly style="background:var(--cream);cursor:default" />
-            </div>
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Nachbesserungen / Reklamationen</label>
-              <input class="form-input" type="number" id="reclamations-count"
-                value="0" min="0" max="50" />
-            </div>
+          ` : ''}
+          <input type="hidden" id="appointments-count" value="20">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Nachbesserungen / Reklamationen</label>
+            <input class="form-input" type="number" id="reclamations-count"
+              value="0" min="0" max="50" />
           </div>
           <div class="form-group" style="margin-top:14px">
             <label class="form-label">Kundenfeedback (1–5)</label>
@@ -151,11 +147,11 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
     overlay.addEventListener('click', e => { if (e.target === overlay) close() })
     overlay.querySelector('#save-btn').addEventListener('click', () => save(overlay))
 
-    if (!isSelfAssessment && latestEval?.employee_id && latestEval?.created_at) {
+    if (!isSelfAssessment && isManager && latestEval?.employee_id && latestEval?.created_at) {
       loadPeriodStats(overlay, latestEval)
-    } else if (!isSelfAssessment) {
+    } else if (!isSelfAssessment && isManager) {
       const body = overlay.querySelector('#period-stats-body')
-      if (body) body.textContent = 'Kein Selbst-Assessment vorhanden – Termine manuell eintragen.'
+      if (body) body.textContent = 'Kein Selbst-Assessment vorhanden.'
     }
 
     return overlay
@@ -186,22 +182,32 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
 
     const appts   = Number(row.appointment_count ?? row.total_appointments ?? row.appointments ?? 0)
     const revenue = Number(row.total_revenue ?? row.revenue ?? 0)
+    const tips    = Number(row.total_tips    ?? row.tips    ?? 0)
     const hours   = Number(row.hours_worked  ?? row.total_hours ?? 0)
+    const avg     = appts > 0 ? revenue / appts : 0
     const fmtEur  = n => Number(n).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 
     statsBody.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center">
         <div>
-          <div style="font-weight:700;color:var(--aubergine);font-size:1.1rem">${appts}</div>
-          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">Termine</div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${appts}</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Kunden</div>
         </div>
         <div>
-          <div style="font-weight:700;color:var(--aubergine);font-size:1.1rem">${fmtEur(revenue)}</div>
-          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">Umsatz</div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${fmtEur(revenue)}</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Umsatz</div>
         </div>
         <div>
-          <div style="font-weight:700;color:var(--aubergine);font-size:1.1rem">${Number(hours).toFixed(1)} Std.</div>
-          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">Arbeitszeit</div>
+          <div style="font-weight:700;color:var(--gold);font-size:0.95rem">${fmtEur(tips)}</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Trinkgeld</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${Number(hours).toFixed(1)} Std.</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Stunden</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:var(--aubergine);font-size:0.95rem">${fmtEur(avg)}</div>
+          <div style="font-size:0.67rem;color:var(--text-light);margin-top:2px">Ø Kunde</div>
         </div>
       </div>
     `

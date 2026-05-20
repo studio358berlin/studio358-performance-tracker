@@ -73,6 +73,7 @@ export function Dashboard({ user }) {
       employee:    emp,
       evaluatorId: user.id,
       latestEval:  latestSelfEval,
+      isManager:   !!(user?.profile?.is_manager || user?.profile?.role === 'manager'),
       onSaved: async () => {
         showToast('Bewertung gespeichert!', 'success')
         await loadData()
