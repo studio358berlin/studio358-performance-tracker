@@ -83,7 +83,7 @@ export function ScoreModal({ employee, evaluatorId, isSelfAssessment = false, la
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--cream-dark)">
           <h4 style="margin-bottom:12px;font-size:0.95rem">Qualitätsdaten</h4>
           <div id="period-stats-card" style="margin-bottom:14px;padding:12px 14px;background:var(--cream);border-radius:var(--radius-sm)">
-            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">performance tracker</div>
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-light);margin-bottom:8px">Performance Tracker</div>
             <div id="period-stats-body" style="font-size:0.85rem;color:var(--text-mid)">Lade Daten…</div>
           </div>
           <input type="hidden" id="appointments-count" value="20">

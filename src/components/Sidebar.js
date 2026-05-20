@@ -7,7 +7,7 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
   const managerNav = [
     { id: 'checkout',  icon: '◈', label: 'Tagesabschluss'  },
     { id: 'analytics', icon: '◉', label: 'Umsatz-Analytics' },
-    { id: 'dashboard', icon: '⊡', label: 'performance tracker' },
+    { id: 'dashboard', icon: '⊡', label: 'Performance Tracker' },
     { id: 'team',      icon: '⊞', label: 'Team Management'  },
     { id: 'sops',      icon: '◎', label: 'Wissensdatenbank'  },
     { id: 'admin',     icon: '⚙', label: 'Studio-Admin'     },
@@ -15,7 +15,7 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
 
   const employeeNav = [
     { id: 'checkout',       icon: '◈', label: 'Tagesabschluss'  },
-    { id: 'my-performance', icon: '⊡', label: 'performance tracker' },
+    { id: 'my-performance', icon: '⊡', label: 'Performance Tracker' },
     { id: 'sops',           icon: '◎', label: 'Wissensdatenbank'  },
   ]
 
