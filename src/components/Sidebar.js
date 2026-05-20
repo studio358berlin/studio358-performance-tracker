@@ -5,18 +5,18 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
   const location  = user?.profile?.location
 
   const managerNav = [
-    { id: 'checkout',  icon: '◈', label: 'Tagesabschluss'  },
-    { id: 'analytics', icon: '◉', label: 'Umsatz-Analytics' },
-    { id: 'dashboard', icon: '⊡', label: 'Performance Tracker' },
-    { id: 'team',      icon: '⊞', label: 'Team Management'  },
-    { id: 'sops',      icon: '◎', label: 'Wissensdatenbank'  },
-    { id: 'admin',     icon: '⚙', label: 'Studio-Admin'     },
+    { id: 'checkout',  label: 'Tagesabschluss'    },
+    { id: 'analytics', label: 'Umsatz Cockpit'     },
+    { id: 'dashboard', label: 'Performance Tracker' },
+    { id: 'team',      label: 'Team Management'    },
+    { id: 'sops',      label: 'Studio Guide'       },
+    { id: 'admin',     label: 'Studio-Admin'       },
   ]
 
   const employeeNav = [
-    { id: 'checkout',       icon: '◈', label: 'Tagesabschluss'  },
-    { id: 'my-performance', icon: '⊡', label: 'Performance Tracker' },
-    { id: 'sops',           icon: '◎', label: 'Wissensdatenbank'  },
+    { id: 'checkout',       label: 'Tagesabschluss'    },
+    { id: 'my-performance', label: 'Performance Tracker' },
+    { id: 'sops',           label: 'Studio Guide'       },
   ]
 
   const navItems = isManager ? managerNav : employeeNav
@@ -35,7 +35,6 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
         <span class="nav-section-label">Navigation</span>
         ${navItems.map(item => `
           <button class="nav-item ${currentView === item.id ? 'active' : ''}" data-view="${item.id}">
-            <span class="nav-icon">${item.icon}</span>
             ${item.label}
           </button>
         `).join('')}
@@ -55,7 +54,6 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
           </div>
         </div>
         <button class="nav-item" id="logout-btn">
-          <span class="nav-icon">⎋</span>
           Abmelden
         </button>
       </div>

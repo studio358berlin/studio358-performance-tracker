@@ -17,12 +17,16 @@ export function EmployeeView({ user, onNavigate }) {
   let sops = []
   let hoursData    = []   // employee_daily_hours rows for current month
   let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
+  let todayLogs    = []   // daily_revenue_logs for today (read-only display)
   let selectedSOPId = null
   let container = null
 
   async function loadData() {
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
-    const [evalRes, sopRes, hoursRes, analyticsRes] = await Promise.all([
+    const dayStart   = new Date(); dayStart.setHours(0, 0, 0, 0)
+    const dayEnd     = new Date(); dayEnd.setHours(23, 59, 59, 999)
+
+    const [evalRes, sopRes, hoursRes, analyticsRes, todayLogsRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
@@ -33,6 +37,12 @@ export function EmployeeView({ user, onNavigate }) {
         .select('net_hours_month, target_hours_current_month')
         .eq('employee_id', user.id)
         .maybeSingle(),
+      supabase.from('daily_revenue_logs')
+        .select('revenue, tip, payment_method, payment_method_2, amount_method_1, amount_method_2, is_no_show, is_cancelled')
+        .eq('employee_id', user.id)
+        .eq('is_cancelled', false)
+        .gte('created_at', dayStart.toISOString())
+        .lte('created_at', dayEnd.toISOString()),
     ])
     const all    = evalRes.data ?? []
     allEntries   = all
@@ -41,6 +51,7 @@ export function EmployeeView({ user, onNavigate }) {
     sops         = sopRes.data ?? []
     hoursData    = hoursRes.data ?? []
     analyticsRow = analyticsRes.data ?? null
+    todayLogs    = todayLogsRes.data ?? []
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -145,6 +156,63 @@ export function EmployeeView({ user, onNavigate }) {
     `
   }
 
+  function buildTodayCard() {
+    const active = todayLogs.filter(l => !l.is_no_show)
+
+    const byPay = {}
+    active.forEach(l => {
+      const pm = l.payment_method ?? 'bar'
+      if (l.payment_method_2) {
+        byPay[pm]                 = (byPay[pm]                 ?? 0) + Number(l.amount_method_1 ?? 0)
+        byPay[l.payment_method_2] = (byPay[l.payment_method_2] ?? 0) + Number(l.amount_method_2 ?? 0)
+      } else {
+        byPay[pm] = (byPay[pm] ?? 0) + Number(l.revenue ?? 0)
+      }
+    })
+
+    const totalRev = active.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
+    const totalTip = todayLogs.reduce((s, l) => s + Number(l.tip ?? 0), 0)
+
+    const today    = localDate()
+    const todayH   = hoursData.find(h => h.date === today)
+    const netMins  = todayH ? Math.max(0, todayH.hours_worked * 60 - todayH.break_minutes) : null
+    const netHours = netMins !== null ? (netMins / 60) : null
+
+    const PAY_LABELS = { bar: 'Bar', ec: 'EC', paypal: 'PayPal', online: 'Online', gutschein: 'Gutschein' }
+    const breakdown  = Object.entries(byPay)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `${PAY_LABELS[k] ?? k}: ${fmtEur(v)}`)
+      .join(' · ')
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h4>Dein Tag heute</h4>
+          <span style="font-size:0.72rem;color:var(--text-light)">Abgleich für den Tagesabschluss</span>
+        </div>
+        <div style="padding:0 20px 4px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--cream-dark)">
+            <span style="font-size:0.875rem;color:var(--text-mid)">Umsatz heute</span>
+            <div style="text-align:right">
+              <div style="font-weight:700;font-size:1.05rem;color:var(--aubergine)">${fmtEur(totalRev)}</div>
+              ${breakdown ? `<div style="font-size:0.72rem;color:var(--text-light);margin-top:3px">${breakdown}</div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--cream-dark)">
+            <span style="font-size:0.875rem;color:var(--text-mid)">Trinkgeld heute</span>
+            <span style="font-weight:700;color:var(--gold)">${fmtEur(totalTip)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 16px">
+            <span style="font-size:0.875rem;color:var(--text-mid)">Arbeitszeit heute</span>
+            <span style="font-weight:700;color:var(--aubergine)">
+              ${netHours !== null ? netHours.toFixed(1) + ' Std. (Netto)' : '–'}
+            </span>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
   function buildHTML() {
     if (selectedSOPId) {
       const sop = sops.find(s => s.id === selectedSOPId)
@@ -225,6 +293,8 @@ export function EmployeeView({ user, onNavigate }) {
           </span>
         </div>
       </div>
+
+      ${buildTodayCard()}
 
       <div class="stat-grid">
         <div class="stat-card">
@@ -412,4 +482,13 @@ export function EmployeeView({ user, onNavigate }) {
   }
 
   return { render }
+}
+
+function localDate() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+function fmtEur(n) {
+  return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
