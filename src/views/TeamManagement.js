@@ -30,7 +30,7 @@ export function TeamManagement({ user }) {
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
-        .select('employee_id, date, hours_worked, break_minutes, location_id')
+        .select('employee_id, date, hours_worked, break_minutes, location_id, is_modified, original_hours_worked, modified_at')
         .gte('date', firstOfMonthStr),
       supabase.from('employee_monthly_targets')
         .select('employee_id, target_hours')
@@ -699,17 +699,19 @@ export function TeamManagement({ user }) {
     })()
 
     const rows = employees.map(emp => {
-      const empH      = employeeHours.filter(h => h.employee_id === emp.id)
-      const netMins   = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
-      const targetH   = Number(monthlyTargets.find(t => t.employee_id === emp.id)?.target_hours ?? 160)
-      const monthMins = netMins(() => true)
-      const monthH    = monthMins / 60
-      const balance   = monthH - targetH
+      const empH           = employeeHours.filter(h => h.employee_id === emp.id)
+      const netMins        = (filter) => empH.filter(filter).reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
+      const targetH        = Number(monthlyTargets.find(t => t.employee_id === emp.id)?.target_hours ?? 160)
+      const monthMins      = netMins(() => true)
+      const monthH         = monthMins / 60
+      const balance        = monthH - targetH
+      const modifiedEntries = empH.filter(h => h.is_modified)
       return {
         emp, targetH, balance,
         todayMins: netMins(h => h.date === today),
         weekMins:  netMins(h => h.date >= weekStart),
         monthMins,
+        modifiedEntries,
       }
     })
 
@@ -732,15 +734,29 @@ export function TeamManagement({ user }) {
               </tr>
             </thead>
             <tbody>
-              ${rows.map(({ emp, todayMins, weekMins, monthMins, targetH, balance }) => {
+              ${rows.map(({ emp, todayMins, weekMins, monthMins, targetH, balance, modifiedEntries }) => {
                 const balStr   = (balance >= 0 ? '+' : '') + balance.toFixed(1) + ' Std.'
                 const balColor = balance >= 0 ? '#27AE60' : 'var(--terracotta)'
+
+                let warnBadge = ''
+                if (modifiedEntries.length > 0) {
+                  const tooltipLines = modifiedEntries.map(h => {
+                    const d  = new Date(h.date + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: '2-digit' })
+                    const oh = h.original_hours_worked != null
+                      ? Math.floor(h.original_hours_worked) + ' Std. ' + Math.round((h.original_hours_worked % 1) * 60) + ' Min.'
+                      : '?'
+                    const nh = Math.floor(h.hours_worked) + ' Std. ' + Math.round((h.hours_worked % 1) * 60) + ' Min.'
+                    return `${d}: ${oh} → ${nh}`
+                  }).join('\n')
+                  warnBadge = `<span class="mod-warn-badge" data-tooltip="Auffälligkeit: Arbeitszeit manuell geändert&#10;${tooltipLines.replace(/"/g,'&quot;')}" style="cursor:help;background:#FEF9C3;color:#92400E;border-radius:4px;padding:1px 6px;font-size:0.75rem;font-weight:700;border:1px solid #FDE68A;flex-shrink:0">⚠</span>`
+                }
+
                 return `
                 <tr class="hours-row" data-emp="${emp.id}" style="cursor:pointer" title="Klicken zum Tages-Eintrag bearbeiten">
                   <td>
                     <div style="display:flex;align-items:center;gap:8px">
                       <div>
-                        <div style="font-weight:500">${emp.full_name}</div>
+                        <div style="display:flex;align-items:center;gap:5px;font-weight:500">${emp.full_name}${warnBadge}</div>
                         <div style="font-size:0.72rem;color:var(--text-light)">${locationLabel(emp.location)}</div>
                       </div>
                       <button class="btn-edit-target btn btn-ghost btn-sm" data-emp="${emp.id}"
@@ -916,6 +932,25 @@ export function TeamManagement({ user }) {
         e.stopPropagation()
         openSkillEditModal(btn.dataset.emp)
       })
+    })
+
+    // Warning badge tooltips
+    container.querySelectorAll('.mod-warn-badge').forEach(badge => {
+      let tip = null
+      const show = () => {
+        if (tip) return
+        tip = document.createElement('div')
+        tip.style.cssText = 'position:fixed;z-index:9999;background:rgba(17,17,17,0.92);color:#fff;padding:9px 13px;border-radius:6px;font-size:0.78rem;line-height:1.6;max-width:280px;white-space:pre-wrap;box-shadow:0 4px 16px rgba(0,0,0,0.28);pointer-events:none'
+        tip.textContent = badge.dataset.tooltip
+        document.body.appendChild(tip)
+        const r = badge.getBoundingClientRect()
+        tip.style.top  = Math.min(r.bottom + 6, window.innerHeight - 120) + 'px'
+        tip.style.left = Math.min(r.left, window.innerWidth - 300) + 'px'
+      }
+      const hide = () => { tip?.remove(); tip = null }
+      badge.addEventListener('mouseenter', show)
+      badge.addEventListener('mouseleave', hide)
+      badge.addEventListener('click', e => { e.stopPropagation(); tip ? hide() : show() })
     })
 
     const tableArea = container.querySelector('#team-table-area')

@@ -236,7 +236,7 @@ export function DailyCheckout({ user, onNavigate }) {
     if (!isManager) scheduleAutoCheckOut()
   }
 
-  async function saveHours(hours, breakMins, locationOverride = null) {
+  async function saveHours(hours, breakMins, locationOverride = null, isManualEdit = false) {
     const today    = localDate()
     const h        = parseFloat(String(hours)) || 0
     const b        = Math.max(0, parseInt(String(breakMins), 10) || 0)
@@ -248,6 +248,22 @@ export function DailyCheckout({ user, onNavigate }) {
       hours_worked:  h,
       break_minutes: b,
       location_id:   locId,
+    }
+
+    // Persist clock-in time on initial create (when there's no existing entry)
+    if (!hoursToday && clockInTime) {
+      payload.clock_in_time = clockInTime
+    }
+
+    // Track manual edits via the "Bearbeiten" button
+    if (isManualEdit && hoursToday) {
+      payload.is_modified = true
+      payload.modified_at = new Date().toISOString()
+      // Preserve original values only on first modification
+      if (!hoursToday.is_modified) {
+        payload.original_hours_worked  = hoursToday.hours_worked
+        payload.original_break_minutes = hoursToday.break_minutes
+      }
     }
 
     let data, error
@@ -342,7 +358,7 @@ export function DailyCheckout({ user, onNavigate }) {
       const locId  = overlay.querySelector('#wh-location')?.value ?? null
       const saveBtn = overlay.querySelector('#wh-save')
       saveBtn.disabled = true; saveBtn.textContent = 'Speichern...'
-      const ok = await saveHours(h, b, locId || null)
+      const ok = await saveHours(h, b, locId || null, true)  // isManualEdit = true
       if (ok) overlay.remove()
       else { saveBtn.disabled = false; saveBtn.textContent = 'Speichern' }
     })
@@ -1137,6 +1153,63 @@ export function DailyCheckout({ user, onNavigate }) {
             </table>
           </div>
         ` : `<div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Einträge heute.</p></div>`}
+      </div>
+
+      ${!isManager ? buildHoursHistory() : ''}
+    `
+  }
+
+  function buildHoursHistory() {
+    if (isManager || !hoursToday) return ''
+
+    const h    = Math.floor(hoursToday.hours_worked)
+    const m    = Math.round((hoursToday.hours_worked - h) * 60)
+    const netH = Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)
+
+    let startStr = '–', endStr = '–'
+    if (hoursToday.clock_in_time) {
+      const cin = new Date(hoursToday.clock_in_time)
+      startStr = cin.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'
+      const cout = new Date(cin.getTime() + hoursToday.hours_worked * 3600000)
+      endStr = cout.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'
+    }
+
+    let modHtml = ''
+    if (hoursToday.is_modified && hoursToday.original_hours_worked != null) {
+      const oh  = Math.floor(hoursToday.original_hours_worked)
+      const om  = Math.round((hoursToday.original_hours_worked - oh) * 60)
+      const modDate = hoursToday.modified_at
+        ? new Date(hoursToday.modified_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
+        : '–'
+      modHtml = `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:rgba(181,87,58,0.06);border-radius:var(--radius-sm);font-size:0.82rem;margin-top:6px">
+          <span style="color:var(--terracotta);opacity:0.75;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Geändert ${modDate}</span>
+          <span style="text-decoration:line-through;color:var(--terracotta)">${oh} Std. ${om} Min.</span>
+          <span style="color:var(--text-light)">→</span>
+          <span style="color:#27AE60;font-weight:600">${h} Std. ${m} Min.</span>
+        </div>
+      `
+    }
+
+    return `
+      <div class="card" style="margin-top:24px">
+        <div class="card-header">
+          <h4>📋 Arbeitszeiten-Historie</h4>
+          <span style="font-size:0.78rem;color:var(--text-light)">${new Date(dateFrom + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'short', day:'numeric', month:'short' })}</span>
+        </div>
+        <div style="padding:12px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div style="font-size:0.9rem;color:var(--aubergine)">
+              <strong>${startStr}</strong>
+              <span style="color:var(--text-light);margin:0 6px">→</span>
+              <strong>${endStr}</strong>
+            </div>
+            <div style="font-size:0.82rem;color:var(--text-mid)">
+              ${h} Std. ${m} Min. &nbsp;·&nbsp; ${hoursToday.break_minutes} Min. Pause &nbsp;·&nbsp; Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong>
+            </div>
+          </div>
+          ${modHtml}
+        </div>
       </div>
     `
   }
