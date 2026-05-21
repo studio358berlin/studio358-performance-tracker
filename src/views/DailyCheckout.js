@@ -15,6 +15,7 @@ export function DailyCheckout({ user, onNavigate }) {
   let dateTo             = localDate()
   let period             = localStorage.getItem('checkoutPeriod') || 'today'
   let clockInTime        = localStorage.getItem('clockIn_' + localDate()) || null
+  let autoCheckOutTimer  = null
 
   // ── Date range helper ─────────────────────────────────────────────────────────
 
@@ -232,6 +233,7 @@ export function DailyCheckout({ user, onNavigate }) {
       hoursToday = hData ?? null
     }
     rerender()
+    if (!isManager) scheduleAutoCheckOut()
   }
 
   async function saveHours(hours, breakMins, locationOverride = null) {
@@ -443,11 +445,13 @@ export function DailyCheckout({ user, onNavigate }) {
     clockInTime = new Date().toISOString()
     localStorage.setItem('clockIn_' + localDate(), clockInTime)
     await saveHours(8, 30, locationId)
+    scheduleAutoCheckOut()
   }
 
   async function earlyCheckOut() {
     if (!clockInTime) return
     if (!confirm('Schicht jetzt beenden?\n\nDie tatsächliche Arbeitszeit wird berechnet und gespeichert.')) return
+    if (autoCheckOutTimer) { clearTimeout(autoCheckOutTimer); autoCheckOutTimer = null }
     const diffH   = (Date.now() - new Date(clockInTime).getTime()) / 3600000
     const actualH = Math.max(0.5, Math.round(diffH * 4) / 4)
     localStorage.removeItem('clockIn_' + localDate())
@@ -455,14 +459,29 @@ export function DailyCheckout({ user, onNavigate }) {
     await saveHours(actualH, 30)
   }
 
+  function scheduleAutoCheckOut() {
+    if (!clockInTime || !hoursToday || dateFrom !== localDate()) return
+    if (autoCheckOutTimer) clearTimeout(autoCheckOutTimer)
+    const plannedMs = Number(hoursToday.hours_worked) * 3600000
+    const remaining = plannedMs - (Date.now() - new Date(clockInTime).getTime())
+    if (remaining <= 0) { autoFinishShift(); return }
+    autoCheckOutTimer = setTimeout(autoFinishShift, remaining)
+  }
+
+  function autoFinishShift() {
+    autoCheckOutTimer = null
+    localStorage.removeItem('clockIn_' + localDate())
+    clockInTime = null
+    rerender()
+  }
+
   function buildMyHoursCard() {
     if (isManager) return ''
 
     if (!hoursToday) {
       return `
-        <div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text-mid);margin:-10px 0 16px;padding:0 2px">
-          <span>Heute erfasste Arbeitszeit: <strong>0 Std. 0 Min.</strong></span>
-          <button class="btn btn-ghost btn-sm" id="btn-log-hours" style="padding:2px 8px;font-size:0.75rem" title="Arbeitszeit manuell eintragen">✏ anpassen</button>
+        <div style="font-size:0.8rem;color:var(--text-mid);margin:-10px 0 16px;padding:0 2px">
+          Heute erfasste Arbeitszeit: <strong>0 Std. 0 Min.</strong>
         </div>
       `
     }
@@ -478,9 +497,8 @@ export function DailyCheckout({ user, onNavigate }) {
     const m       = Math.round((hoursToday.hours_worked - h) * 60)
 
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:6px 14px;margin:-10px 0 16px;font-size:0.8rem;color:var(--text-mid)">
-        <span>Heute erfasste Arbeitszeit: <strong style="color:var(--aubergine)">${h} Std. ${m} Min.</strong> · Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong> · Auslastung: <strong style="color:${uCol}">${util}%</strong></span>
-        <button class="btn btn-ghost btn-sm" id="btn-log-hours" style="padding:2px 8px;font-size:0.75rem">✏</button>
+      <div style="padding:6px 14px;margin:-10px 0 16px;font-size:0.8rem;color:var(--text-mid)">
+        Heute erfasste Arbeitszeit: <strong style="color:var(--aubergine)">${h} Std. ${m} Min.</strong> · Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong> · Auslastung: <strong style="color:${uCol}">${util}%</strong>
       </div>
     `
   }
@@ -507,43 +525,30 @@ export function DailyCheckout({ user, onNavigate }) {
     const netH = Math.max(0, Number(hoursToday.hours_worked) - Number(hoursToday.break_minutes) / 60).toFixed(1)
 
     if (active) {
-      const startStr = new Date(clockInTime).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
       return `
-        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
-          <button id="btn-hours-banner" style="
-            display:flex;align-items:center;justify-content:space-between;
-            width:100%;padding:14px 18px;
-            border:none;border-radius:var(--radius-md);cursor:pointer;
-            background:#27AE60;color:#fff;
-            box-shadow:0 2px 10px rgba(0,0,0,0.18);
-          ">
-            <span style="font-size:0.95rem;font-weight:700">✓ Schicht läuft seit ${startStr} Uhr</span>
-            <span style="font-size:0.8rem;opacity:0.85">${Number(hoursToday.hours_worked)} Std. geplant · Bearbeiten ›</span>
-          </button>
-          <button class="btn-early-checkout" style="
-            display:flex;align-items:center;justify-content:center;gap:8px;
-            width:100%;padding:12px 18px;
-            border:none;border-radius:var(--radius-md);cursor:pointer;
-            background:var(--gold);color:#fff;font-weight:700;font-size:0.9rem;
-            box-shadow:0 2px 10px rgba(0,0,0,0.12);
-          ">
-            ⏹ Früher Feierabend machen
-          </button>
-        </div>
+        <button class="btn-early-checkout" style="
+          display:flex;align-items:center;justify-content:center;gap:8px;
+          width:100%;padding:14px 18px;margin-bottom:20px;
+          border:none;border-radius:var(--radius-md);cursor:pointer;
+          background:var(--gold);color:#fff;font-weight:700;font-size:0.95rem;
+          box-shadow:0 2px 10px rgba(0,0,0,0.18);
+        ">
+          ➔ Schicht früher beenden
+        </button>
       `
     }
 
     return `
-      <button id="btn-hours-banner" style="
+      <div style="
         display:flex;align-items:center;justify-content:space-between;
         width:100%;padding:14px 18px;margin-bottom:20px;
-        border:none;border-radius:var(--radius-md);cursor:pointer;
+        border-radius:var(--radius-md);
         background:#27AE60;color:#fff;
         box-shadow:0 2px 10px rgba(0,0,0,0.18);
       ">
         <span style="font-size:0.95rem;font-weight:700">✓ Arbeitszeit erfasst</span>
         <span style="font-size:0.8rem;opacity:0.85">${Number(hoursToday.hours_worked)} Std. · ${Number(hoursToday.break_minutes)} Min. Pause · ${netH} Std. Netto</span>
-      </button>
+      </div>
     `
   }
 
@@ -1188,11 +1193,7 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
-    container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursModal())
-    container.querySelector('#btn-hours-banner')?.addEventListener('click', () => {
-      if (!hoursToday) openClockInModal()
-      else openHoursModal()
-    })
+    container.querySelector('#btn-hours-banner')?.addEventListener('click', () => openClockInModal())
     container.querySelectorAll('.btn-early-checkout').forEach(btn => {
       btn.addEventListener('click', () => earlyCheckOut())
     })
@@ -1248,6 +1249,7 @@ export function DailyCheckout({ user, onNavigate }) {
     await loadData()
     el.innerHTML = buildHTML()
     attachEvents()
+    if (!isManager) scheduleAutoCheckOut()
     return el
   }
 

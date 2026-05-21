@@ -196,19 +196,23 @@ export function TeamManagement({ user }) {
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:480px;width:100%;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0;flex-shrink:0">
           <div>
-            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Skills bearbeiten</h3>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Skills zuweisen</h3>
             <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${emp.full_name}</div>
           </div>
           <button id="sk-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
         </div>
         <div style="flex:1;overflow-y:auto;padding:16px 20px">
-          <div style="display:flex;gap:8px;margin-bottom:14px">
-            <input id="sk-new-name" type="text" placeholder="Neuer Skill-Name"
-              style="flex:1;padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.88rem;background:var(--white);color:var(--aubergine);outline:none">
-            <button id="sk-create" class="btn btn-accent btn-sm" style="white-space:nowrap">+ Skill erstellen</button>
+          <p style="font-size:0.8rem;color:var(--text-mid);margin-bottom:14px">Tippen zum Aktivieren / Deaktivieren</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${skillsToShow.map(skill => {
+              const active = currentSkillIds.has(skill.id)
+              const c = skill.color || 'var(--aubergine)'
+              return `<button type="button" class="skill-modal-btn" data-skill="${skill.id}" data-active="${active}"
+                style="padding:5px 12px;border-radius:20px;border:2px solid ${active ? c : 'var(--cream-dark)'};background:${active ? c : 'var(--white)'};color:${active ? '#fff' : 'var(--text-mid)'};font-size:0.8rem;font-weight:${active ? '600' : '400'};cursor:pointer;transition:all 0.15s">
+                ${skill.label}${active ? ' ✓' : ''}
+              </button>`
+            }).join('')}
           </div>
-          <p style="font-size:0.8rem;color:var(--text-mid);margin-bottom:14px">Aktivieren/deaktivieren per Klick · ✏ umbenennen · 🗑 löschen</p>
-          <div id="skill-modal-grid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
         </div>
         <div style="padding:14px 20px;flex-shrink:0;border-top:1px solid var(--cream-dark)">
           <button id="sk-save" class="btn btn-accent" style="width:100%;justify-content:center">Änderungen speichern</button>
@@ -217,106 +221,19 @@ export function TeamManagement({ user }) {
     `
 
     document.body.appendChild(overlay)
-    const grid = overlay.querySelector('#skill-modal-grid')
 
-    function applyToggleStyle(btn, skill, active) {
-      const c = skill.color || 'var(--aubergine)'
-      btn.style.cssText = `padding:5px 12px;border-radius:20px;border:2px solid ${active ? c : 'var(--cream-dark)'};background:${active ? c : 'var(--white)'};color:${active ? '#fff' : 'var(--text-mid)'};font-size:0.8rem;font-weight:${active ? '600' : '400'};cursor:pointer;transition:all 0.15s`
-    }
-
-    function makeSkillItem(skill, isActive) {
-      const wrap = document.createElement('div')
-      wrap.style.cssText = 'display:flex;align-items:center;gap:2px'
-      wrap.dataset.skillId = skill.id
-
-      const btn = document.createElement('button')
-      btn.type = 'button'; btn.className = 'skill-modal-btn'
-      btn.dataset.skill = skill.id; btn.dataset.active = String(isActive)
-      applyToggleStyle(btn, skill, isActive)
-      btn.textContent = skill.label + (isActive ? ' ✓' : '')
+    overlay.querySelectorAll('.skill-modal-btn').forEach(btn => {
+      const skill = skillsToShow.find(s => s.id === btn.dataset.skill)
       btn.addEventListener('click', () => {
         const active = btn.dataset.active !== 'true'
         btn.dataset.active = String(active)
-        applyToggleStyle(btn, skill, active)
-        btn.textContent = skill.label + (active ? ' ✓' : '')
+        const c = skill?.color || 'var(--aubergine)'
+        btn.style.borderColor = active ? c : 'var(--cream-dark)'
+        btn.style.background  = active ? c : 'var(--white)'
+        btn.style.color       = active ? '#fff' : 'var(--text-mid)'
+        btn.style.fontWeight  = active ? '600' : '400'
+        btn.textContent       = (skill?.label ?? btn.dataset.skill) + (active ? ' ✓' : '')
       })
-
-      const editBtn = document.createElement('button')
-      editBtn.type = 'button'; editBtn.title = 'Umbenennen'
-      editBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:0.75rem;padding:3px 5px;color:var(--text-light);line-height:1;border-radius:4px'
-      editBtn.textContent = '✏'
-      editBtn.addEventListener('click', () => {
-        const inp = document.createElement('input')
-        inp.type = 'text'; inp.value = skill.label
-        inp.style.cssText = 'padding:4px 10px;border:2px solid var(--aubergine);border-radius:20px;font-size:0.8rem;background:var(--white);color:var(--aubergine);outline:none;min-width:80px;max-width:140px'
-        wrap.replaceChild(inp, btn)
-        editBtn.style.visibility = 'hidden'
-        inp.focus(); inp.select()
-
-        let committed = false
-        async function commitEdit() {
-          if (committed) return; committed = true
-          const newName = inp.value.trim()
-          wrap.replaceChild(btn, inp)
-          editBtn.style.visibility = ''
-          if (!newName || newName === skill.label) return
-          const { error } = await supabase.from('skills').update({ name: newName }).eq('id', skill.id)
-          if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-          skill.label = newName
-          const idx = availableSkills.findIndex(s => s.id === skill.id)
-          if (idx !== -1) availableSkills[idx].label = newName
-          btn.textContent = newName + (btn.dataset.active === 'true' ? ' ✓' : '')
-          showToast(`Skill umbenannt: "${newName}"`, 'success')
-        }
-
-        inp.addEventListener('keydown', e => {
-          if (e.key === 'Enter') { e.preventDefault(); commitEdit() }
-          if (e.key === 'Escape') { committed = true; wrap.replaceChild(btn, inp); editBtn.style.visibility = '' }
-        })
-        inp.addEventListener('blur', commitEdit)
-      })
-
-      const delBtn = document.createElement('button')
-      delBtn.type = 'button'; delBtn.title = 'Skill löschen'
-      delBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:0.75rem;padding:3px 5px;color:var(--terracotta);line-height:1;border-radius:4px'
-      delBtn.textContent = '🗑'
-      delBtn.addEventListener('click', async () => {
-        if (!confirm(`Möchtest du diesen Skill wirklich dauerhaft aus dem System löschen?\n\n"${skill.label}"`)) return
-        const { error } = await supabase.from('skills').delete().eq('id', skill.id)
-        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-        const idx = availableSkills.findIndex(s => s.id === skill.id)
-        if (idx !== -1) availableSkills.splice(idx, 1)
-        wrap.remove()
-        showToast(`Skill "${skill.label}" gelöscht.`, 'success')
-      })
-
-      wrap.appendChild(btn); wrap.appendChild(editBtn); wrap.appendChild(delBtn)
-      return wrap
-    }
-
-    for (const skill of skillsToShow) {
-      grid.appendChild(makeSkillItem(skill, currentSkillIds.has(skill.id)))
-    }
-
-    overlay.querySelector('#sk-create')?.addEventListener('click', async () => {
-      const input     = overlay.querySelector('#sk-new-name')
-      const name      = input?.value?.trim()
-      if (!name) return
-      const createBtn = overlay.querySelector('#sk-create')
-      createBtn.disabled = true; createBtn.textContent = '…'
-      const { data: newSkill, error } = await supabase
-        .from('skills').insert({ name }).select().single()
-      if (error) {
-        showToast('Fehler: ' + error.message, 'error')
-        createBtn.disabled = false; createBtn.textContent = '+ Skill erstellen'
-        return
-      }
-      const skill = { id: newSkill.id, label: newSkill.name || name, color: newSkill.color || '#A08090' }
-      availableSkills.push(skill)
-      grid.appendChild(makeSkillItem(skill, false))
-      input.value = ''
-      showToast(`Skill "${name}" erstellt!`, 'success')
-      createBtn.disabled = false; createBtn.textContent = '+ Skill erstellen'
     })
 
     overlay.querySelector('#sk-close').addEventListener('click', () => overlay.remove())
@@ -327,7 +244,7 @@ export function TeamManagement({ user }) {
       saveBtn.disabled = true; saveBtn.textContent = 'Speichern…'
 
       const newSkillIds = []
-      grid.querySelectorAll('.skill-modal-btn[data-active="true"]').forEach(b => newSkillIds.push(b.dataset.skill))
+      overlay.querySelectorAll('.skill-modal-btn[data-active="true"]').forEach(b => newSkillIds.push(b.dataset.skill))
 
       const { error: delErr } = await supabase.from('employee_skills').delete().eq('employee_id', empId)
       if (delErr) {

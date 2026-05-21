@@ -3,10 +3,11 @@ import { supabase } from '../lib/supabase.js'
 export function StudioAdmin({ user }) {
   const isManager = user?.profile?.is_manager || user?.profile?.role === 'manager'
 
-  let locations  = []
-  let treatments = []
-  let activeTab  = 'treatments'  // 'treatments' | 'locations' | 'reports'
-  let container  = null
+  let locations       = []
+  let treatments      = []
+  let availableSkills = []
+  let activeTab       = 'treatments'  // 'treatments' | 'locations' | 'skills' | 'reports'
+  let container       = null
   let editingTreatment = undefined  // undefined=list view, null=new form, {obj}=edit form
   let editingLocation  = undefined
 
@@ -32,12 +33,14 @@ export function StudioAdmin({ user }) {
   // ── Data ─────────────────────────────────────────────────────────────────────
 
   async function loadData() {
-    const [locRes, treatRes] = await Promise.all([
+    const [locRes, treatRes, skillsRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
       supabase.from('treatments').select('*, location:location_id(name)').order('name'),
+      supabase.from('skills').select('*').order('name'),
     ])
-    locations  = locRes.data  ?? []
-    treatments = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
+    locations       = locRes.data    ?? []
+    treatments      = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
+    availableSkills = skillsRes.data ?? []
   }
 
   async function loadReportData() {
@@ -267,21 +270,57 @@ export function StudioAdmin({ user }) {
     `
   }
 
+  function buildSkillsPanel() {
+    return `
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header"><h4>Neuen Skill erstellen</h4></div>
+        <div style="padding:14px 16px;display:flex;gap:10px">
+          <input id="skill-new-name" type="text" placeholder="Skill-Name (z. B. Shellac)" style="${inputStyle};flex:1">
+          <button id="skill-create-btn" class="btn btn-accent btn-sm" style="white-space:nowrap">+ Erstellen</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h4>Alle Skills (${availableSkills.length})</h4></div>
+        ${availableSkills.length ? `
+          <div style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:6px">
+            ${availableSkills.map(s => `
+              <div class="skill-item" data-id="${s.id}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--cream-dark);border-radius:var(--radius-sm)">
+                <span class="skill-item-label" style="font-size:0.9rem;color:var(--aubergine);font-weight:500">${s.name ?? s.id}</span>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-ghost btn-sm btn-rename-skill" data-id="${s.id}" style="font-size:0.75rem;padding:3px 8px">✏ Umbenennen</button>
+                  <button class="btn btn-sm btn-delete-skill" data-id="${s.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">🗑 Löschen</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div class="empty-state" style="padding:32px 20px">
+            <span class="empty-state-icon">◉</span>
+            <p>Noch keine Skills angelegt.</p>
+          </div>
+        `}
+      </div>
+    `
+  }
+
   function buildHTML() {
     return `
       <div class="page-header">
         <h2>Studio-Admin</h2>
-        <p style="color:var(--text-light);font-size:0.875rem">Behandlungen, Standorte & Monatsberichte</p>
+        <p style="color:var(--text-light);font-size:0.875rem">Behandlungen, Standorte, Skills & Monatsberichte</p>
       </div>
 
       <div class="location-tabs" style="margin-bottom:24px">
         <button class="location-tab ${activeTab === 'treatments' ? 'active' : ''}" data-tab="treatments">Behandlungen</button>
         <button class="location-tab ${activeTab === 'locations'  ? 'active' : ''}" data-tab="locations">Standorte</button>
+        <button class="location-tab ${activeTab === 'skills'     ? 'active' : ''}" data-tab="skills">Skills</button>
         <button class="location-tab ${activeTab === 'reports'    ? 'active' : ''}" data-tab="reports">Monatsberichte</button>
       </div>
 
       ${activeTab === 'treatments' ? buildTreatmentsPanel()
       : activeTab === 'locations'  ? buildLocationsPanel()
+      : activeTab === 'skills'     ? buildSkillsPanel()
       : buildReportsPanel()}
     `
   }
@@ -549,6 +588,62 @@ export function StudioAdmin({ user }) {
         slug:                 container.querySelector('#loc-slug').value,
         daily_revenue_target: container.querySelector('#loc-target').value,
       }, editingLocation?.id)
+    })
+
+    // Skills CRUD
+    container.querySelector('#skill-create-btn')?.addEventListener('click', async () => {
+      const input = container.querySelector('#skill-new-name')
+      const name  = input?.value?.trim()
+      if (!name) { showToast('Bitte einen Namen eingeben.', 'error'); return }
+      const btn   = container.querySelector('#skill-create-btn')
+      btn.disabled = true; btn.textContent = '…'
+      const { error } = await supabase.from('skills').insert({ name })
+      if (error) { showToast('Fehler: ' + error.message, 'error') }
+      else        { showToast(`Skill "${name}" erstellt!`) }
+      btn.disabled = false; btn.textContent = '+ Erstellen'
+      await loadData(); rerender()
+    })
+    container.querySelectorAll('.btn-rename-skill[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id   = btn.dataset.id
+        const item = container.querySelector(`.skill-item[data-id="${id}"]`)
+        if (!item) return
+        const label = item.querySelector('.skill-item-label')
+        const orig  = label.textContent
+
+        const inp = document.createElement('input')
+        inp.type = 'text'; inp.value = orig
+        inp.style.cssText = 'padding:4px 10px;border:2px solid var(--aubergine);border-radius:var(--radius-sm);font-size:0.88rem;background:var(--white);color:var(--aubergine);outline:none;min-width:120px'
+        item.replaceChild(inp, label)
+        btn.style.visibility = 'hidden'
+        inp.focus(); inp.select()
+
+        let committed = false
+        async function commitRename() {
+          if (committed) return; committed = true
+          const newName = inp.value.trim()
+          if (!newName || newName === orig) { item.replaceChild(label, inp); btn.style.visibility = ''; return }
+          const { error } = await supabase.from('skills').update({ name: newName }).eq('id', id)
+          if (error) { showToast('Fehler: ' + error.message, 'error') }
+          else        { showToast(`Skill umbenannt: "${newName}"`) }
+          await loadData(); rerender()
+        }
+        inp.addEventListener('keydown', e => {
+          if (e.key === 'Enter')  { e.preventDefault(); commitRename() }
+          if (e.key === 'Escape') { committed = true; item.replaceChild(label, inp); btn.style.visibility = '' }
+        })
+        inp.addEventListener('blur', commitRename)
+      })
+    })
+    container.querySelectorAll('.btn-delete-skill[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const skill = availableSkills.find(s => s.id === btn.dataset.id)
+        if (!confirm(`Skill "${skill?.name ?? ''}" dauerhaft löschen?\n\nDie Zuweisung an alle Mitarbeiter wird ebenfalls entfernt.`)) return
+        const { error } = await supabase.from('skills').delete().eq('id', btn.dataset.id)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+        showToast(`Skill "${skill?.name ?? ''}" gelöscht.`)
+        await loadData(); rerender()
+      })
     })
 
     // Reports tab
