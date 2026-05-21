@@ -17,7 +17,8 @@ export function EmployeeView({ user, onNavigate }) {
   let sops = []
   let hoursData    = []   // employee_daily_hours rows for current month
   let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
-  let todayLogs    = []   // daily_revenue_logs for today (read-only display)
+  let todayLogs      = []   // daily_revenue_logs for today (read-only display)
+  let thirtyDayStats = { customers: 0, tips: 0 }
   let selectedSOPId = null
   let container = null
 
@@ -26,7 +27,9 @@ export function EmployeeView({ user, onNavigate }) {
     const dayStart   = new Date(); dayStart.setHours(0, 0, 0, 0)
     const dayEnd     = new Date(); dayEnd.setHours(23, 59, 59, 999)
 
-    const [evalRes, sopRes, hoursRes, analyticsRes, todayLogsRes] = await Promise.all([
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+    const [evalRes, sopRes, hoursRes, analyticsRes, todayLogsRes, thirtyDayRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
@@ -43,6 +46,11 @@ export function EmployeeView({ user, onNavigate }) {
         .eq('is_cancelled', false)
         .gte('created_at', dayStart.toISOString())
         .lte('created_at', dayEnd.toISOString()),
+      supabase.from('daily_revenue_logs')
+        .select('tip, is_no_show')
+        .eq('employee_id', user.id)
+        .eq('is_cancelled', false)
+        .gte('created_at', thirtyDaysAgo.toISOString()),
     ])
     const all    = evalRes.data ?? []
     allEntries   = all
@@ -52,6 +60,11 @@ export function EmployeeView({ user, onNavigate }) {
     hoursData    = hoursRes.data ?? []
     analyticsRow = analyticsRes.data ?? null
     todayLogs    = todayLogsRes.data ?? []
+    const thirtyDayData = thirtyDayRes.data ?? []
+    thirtyDayStats = {
+      customers: thirtyDayData.filter(l => !l.is_no_show).length,
+      tips:      thirtyDayData.reduce((s, l) => s + Number(l.tip ?? 0), 0),
+    }
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -157,6 +170,18 @@ export function EmployeeView({ user, onNavigate }) {
   }
 
   function buildTodayCard() {
+    const badges = []
+    if (thirtyDayStats.customers > 40) badges.push({
+      label: 'Power Performer', icon: '⚡',
+      desc:  `${thirtyDayStats.customers} Kunden in 30 Tagen`,
+      bg: 'rgba(61,43,53,0.08)', border: 'rgba(61,43,53,0.2)', color: 'var(--aubergine)',
+    })
+    if (thirtyDayStats.tips > 50) badges.push({
+      label: 'Kunden-Liebling', icon: '★',
+      desc:  `${fmtEur(thirtyDayStats.tips)} Trinkgeld in 30 Tagen`,
+      bg: 'rgba(212,175,55,0.1)', border: 'rgba(212,175,55,0.25)', color: 'var(--gold)',
+    })
+
     const active = todayLogs.filter(l => !l.is_no_show)
 
     const byPay = {}
@@ -209,6 +234,19 @@ export function EmployeeView({ user, onNavigate }) {
             </span>
           </div>
         </div>
+        ${badges.length ? `
+          <div style="padding:0 20px 16px;display:flex;gap:8px;flex-wrap:wrap">
+            ${badges.map(b => `
+              <div style="display:flex;align-items:center;gap:8px;background:${b.bg};border:1px solid ${b.border};border-radius:20px;padding:7px 14px">
+                <span style="font-size:0.9rem">${b.icon}</span>
+                <div>
+                  <div style="font-size:0.78rem;font-weight:700;color:${b.color}">${b.label}</div>
+                  <div style="font-size:0.65rem;color:var(--text-light)">${b.desc}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
     `
   }

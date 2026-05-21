@@ -38,6 +38,7 @@ export function SOPView({ user }) {
       pdf_link:         formData.file_url  || null,
       associated_skill: skill || null,
       category:         formData.sop_group === 'studio' ? 'studio-standards' : 'behandlungen',
+      is_mandatory:     formData.is_mandatory === 'on',
     }
 
     if (editSop) {
@@ -139,7 +140,8 @@ export function SOPView({ user }) {
           </button>
         ` : ''}
         <h4 style="color:var(--aubergine);margin-bottom:4px">${sop.title}</h4>
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          ${sop.is_mandatory ? '<span class="badge" style="background:var(--terracotta);color:#fff">Pflichtlektüre</span>' : ''}
           ${skillLabel ? `<span class="badge badge-neutral">${skillLabel}</span>` : ''}
           ${sop.video_url ? '<span class="badge badge-terracotta">▶ Video</span>' : ''}
           ${sop.pdf_link  ? `<a href="${sop.pdf_link}" target="_blank" rel="noopener" class="badge badge-gold" onclick="event.stopPropagation()">↓ PDF</a>` : ''}
@@ -257,6 +259,15 @@ export function SOPView({ user }) {
             <label class="form-label">Inhalt (Markdown)</label>
             <textarea class="form-textarea" name="content" style="min-height:160px"
               placeholder="## Ablauf&#10;&#10;1. Schritt eins&#10;2. Schritt zwei">${s.content || ''}</textarea>
+          </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" name="is_mandatory" ${s.is_mandatory ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--terracotta)">
+              <span style="font-weight:500;color:var(--aubergine);font-size:0.875rem">Als Pflichtlektüre markieren</span>
+            </label>
+            <p style="font-size:0.72rem;color:var(--text-light);margin-top:4px">
+              Mitarbeiter müssen diese SOP vor dem Einstempeln bestätigen.
+            </p>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <div class="form-group" style="margin-bottom:0">

@@ -342,7 +342,58 @@ export function DailyCheckout({ user, onNavigate }) {
     })
   }
 
-  function openClockInModal() {
+  function showMandatorySopModal(sopList, onAllRead) {
+    const sop  = sopList[0]
+    const rest = sopList.slice(1)
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0.72);box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg) var(--radius-lg) 0 0;max-width:520px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 -10px 40px rgba(0,0,0,0.3)">
+        <div style="padding:16px 20px 14px;border-bottom:1px solid var(--cream-dark)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--terracotta)">Pflichtlektüre</span>
+              <h3 style="margin:6px 0 0;color:var(--aubergine);font-size:1rem;line-height:1.3">${sop.title}</h3>
+            </div>
+            ${rest.length > 0 ? `<span style="font-size:0.75rem;color:var(--text-light);white-space:nowrap;margin-left:12px;padding-top:4px">noch ${rest.length}</span>` : ''}
+          </div>
+          <p style="margin:8px 0 0;font-size:0.8rem;color:var(--text-mid)">Bitte lies diese SOP vollständig, bevor du deine Schicht startest.</p>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px 20px;font-size:0.875rem;color:var(--text-mid);line-height:1.75">
+          ${sop.content ? sop.content.replace(/\n/g, '<br>') : '<em style="color:var(--text-light)">Kein Inhalt</em>'}
+        </div>
+        <div style="padding:16px 20px;border-top:1px solid var(--cream-dark)">
+          <button id="sop-confirm-btn" class="btn btn-accent" style="width:100%;justify-content:center;background:var(--terracotta);border-color:var(--terracotta)">
+            ✓ Gelesen &amp; Verstanden
+          </button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    overlay.querySelector('#sop-confirm-btn').addEventListener('click', async () => {
+      const btn = overlay.querySelector('#sop-confirm-btn')
+      btn.disabled    = true
+      btn.textContent = 'Wird gespeichert…'
+      await supabase.from('sop_reads').insert({ sop_id: sop.id, employee_id: user.id, read_at: new Date().toISOString() })
+      overlay.remove()
+      if (rest.length > 0) showMandatorySopModal(rest, onAllRead)
+      else onAllRead()
+    })
+  }
+
+  async function openClockInModal() {
+    try {
+      const { data: unread } = await supabase.rpc('get_unread_mandatory_articles', { target_employee_id: user.id })
+      if (unread && unread.length > 0) {
+        showMandatorySopModal(unread, () => openClockInModal())
+        return
+      }
+    } catch (_) { /* RPC not yet available — proceed without gate */ }
+
     const overlay = document.createElement('div')
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
 
@@ -420,7 +471,7 @@ export function DailyCheckout({ user, onNavigate }) {
         <div class="card-header">
           <h4>Meine Arbeitszeit heute</h4>
           <div style="display:flex;gap:6px;align-items:center">
-            ${!!clockInTime && selectedDate === localDate() ? `<button class="btn btn-sm btn-early-checkout" style="background:var(--gold);color:#fff;border:none;cursor:pointer">⏹ Früher Feierabend</button>` : ''}
+            ${!!clockInTime && dateFrom === localDate() ? `<button class="btn btn-sm btn-early-checkout" style="background:var(--gold);color:#fff;border:none;cursor:pointer">⏹ Früher Feierabend</button>` : ''}
             <button class="btn ${hoursToday ? 'btn-ghost' : 'btn-accent'} btn-sm" id="btn-log-hours">
               ${hoursToday ? '✏ Bearbeiten' : '+ Jetzt erfassen'}
             </button>
@@ -457,7 +508,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function buildHoursBanner() {
     const done   = !!hoursToday
-    const active = !!clockInTime && selectedDate === localDate()
+    const active = !!clockInTime && dateFrom === localDate()
 
     if (!done) {
       return `
@@ -1030,7 +1081,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Behandlung erfassen</h4></div>
-        ${selectedDate !== localDate() ? `
+        ${dateFrom !== localDate() ? `
           <div class="empty-state" style="padding:28px 20px">
             <span class="empty-state-icon">◉</span>
             <p style="color:var(--text-mid)">Historische Ansicht – neue Einträge können nur für heute erfasst werden.</p>
