@@ -459,7 +459,12 @@ export function DailyCheckout({ user, onNavigate }) {
     if (isManager) return ''
 
     if (!hoursToday) {
-      return `<p style="font-size:0.8rem;color:var(--text-mid);margin:-10px 0 16px;padding:0 2px">Heute erfasste Arbeitszeit: <strong>0 Std. 0 Min.</strong></p>`
+      return `
+        <div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text-mid);margin:-10px 0 16px;padding:0 2px">
+          <span>Heute erfasste Arbeitszeit: <strong>0 Std. 0 Min.</strong></span>
+          <button class="btn btn-ghost btn-sm" id="btn-log-hours" style="padding:2px 8px;font-size:0.75rem" title="Arbeitszeit manuell eintragen">✏ anpassen</button>
+        </div>
+      `
     }
 
     const treatMins = todayLogs
@@ -1183,10 +1188,7 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
-    container.querySelector('#btn-log-hours')?.addEventListener('click', () => {
-      if (!hoursToday) openClockInModal()
-      else openHoursModal()
-    })
+    container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursModal())
     container.querySelector('#btn-hours-banner')?.addEventListener('click', () => {
       if (!hoursToday) openClockInModal()
       else openHoursModal()
