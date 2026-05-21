@@ -397,8 +397,11 @@ export function DailyCheckout({ user, onNavigate }) {
     const overlay = document.createElement('div')
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
 
-    const profileLocId = user?.profile?.location_id ?? null
-    const defaultLocId = profileLocId ?? (selectedLocationId !== 'all' ? selectedLocationId : null)
+    const profileLocSlug = user?.profile?.location ?? null
+    const profileLocId   = user?.profile?.location_id
+      ?? locations.find(l => l.slug === profileLocSlug)?.id
+      ?? null
+    const defaultLocId = profileLocId ?? (selectedLocationId !== 'all' ? selectedLocationId : locations[0]?.id ?? null)
     const startStr     = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 
     overlay.innerHTML = `
@@ -453,7 +456,12 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   function buildMyHoursCard() {
-    if (isManager || !hoursToday) return ''
+    if (isManager) return ''
+
+    if (!hoursToday) {
+      return `<p style="font-size:0.8rem;color:var(--text-mid);margin:-10px 0 16px;padding:0 2px">Heute erfasste Arbeitszeit: <strong>0 Std. 0 Min.</strong></p>`
+    }
+
     const treatMins = todayLogs
       .filter(l => !l.is_cancelled && !l.is_no_show)
       .reduce((s, l) => s + Number(l.treatment?.duration ?? treatments.find(t => t.id === l.treatment_id)?.duration ?? 60), 0)
@@ -461,15 +469,13 @@ export function DailyCheckout({ user, onNavigate }) {
     const util    = Math.round((treatMins / netMins) * 100)
     const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
     const netH    = Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)
+    const h       = Math.floor(hoursToday.hours_worked)
+    const m       = Math.round((hoursToday.hours_worked - h) * 60)
 
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:7px 14px;margin-bottom:16px;background:var(--cream);border-radius:var(--radius-sm);font-size:0.8rem;color:var(--text-mid)">
-        <span style="font-weight:600;color:var(--aubergine)">Meine Arbeitszeit</span>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <span>${hoursToday.hours_worked} Std. · ${hoursToday.break_minutes} Min. Pause · <strong style="color:var(--aubergine)">${netH} Std. Netto</strong></span>
-          <span style="font-weight:700;color:${uCol}">Auslastung: ${util}%</span>
-          <button class="btn btn-ghost btn-sm" id="btn-log-hours" style="padding:2px 8px;font-size:0.75rem">✏</button>
-        </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:6px 14px;margin:-10px 0 16px;font-size:0.8rem;color:var(--text-mid)">
+        <span>Heute erfasste Arbeitszeit: <strong style="color:var(--aubergine)">${h} Std. ${m} Min.</strong> · Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong> · Auslastung: <strong style="color:${uCol}">${util}%</strong></span>
+        <button class="btn btn-ghost btn-sm" id="btn-log-hours" style="padding:2px 8px;font-size:0.75rem">✏</button>
       </div>
     `
   }
