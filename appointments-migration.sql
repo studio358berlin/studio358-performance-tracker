@@ -6,11 +6,10 @@ CREATE TABLE IF NOT EXISTS public.manager_appointments (
   employee_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   manager_id     UUID REFERENCES public.profiles(id),
   scheduled_date DATE NOT NULL,
-  scheduled_time TIME,
   type           TEXT NOT NULL DEFAULT 'offline',  -- 'online' | 'offline'
-  location       TEXT,   -- e.g. 'mitte' | 'kadewe' for offline
-  meet_link      TEXT,   -- Google Meet URL for online
-  note           TEXT,
+  location       TEXT,    -- 'mitte' | 'kadewe' for offline appointments
+  meet_link      TEXT,    -- Google Meet URL for online appointments
+  note           TEXT,    -- optional note; time preference also stored here if provided
   status         TEXT NOT NULL DEFAULT 'pending_manager',
   -- status flow:
   --   'pending_manager'  → employee requested, awaiting manager response
@@ -21,13 +20,15 @@ CREATE TABLE IF NOT EXISTS public.manager_appointments (
   created_at     TIMESTAMPTZ DEFAULT now()
 );
 
--- If the table already exists but is missing initiated_by, add the column:
+-- If the table already exists, ensure required columns are present:
 ALTER TABLE public.manager_appointments
   ADD COLUMN IF NOT EXISTS initiated_by UUID REFERENCES public.profiles(id);
 
+ALTER TABLE public.manager_appointments
+  ADD COLUMN IF NOT EXISTS manager_id UUID REFERENCES public.profiles(id);
+
 ALTER TABLE public.manager_appointments ENABLE ROW LEVEL SECURITY;
 
--- Drop old policy if it exists, then recreate
 DROP POLICY IF EXISTS "authenticated_all" ON public.manager_appointments;
 
 CREATE POLICY "authenticated_all"

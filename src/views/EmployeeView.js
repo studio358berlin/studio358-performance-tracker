@@ -273,8 +273,7 @@ export function EmployeeView({ user, onNavigate }) {
       const { error } = await supabase.from('manager_appointments').insert({
         employee_id:    user.id,
         scheduled_date: date,
-        scheduled_time: time,
-        note,
+        note:           [note, time ? `Wunschuhrzeit: ${time}` : null].filter(Boolean).join(' · ') || null,
         status:         'pending_manager',
         initiated_by:   user.id,
         type:           'offline',
@@ -395,16 +394,8 @@ export function EmployeeView({ user, onNavigate }) {
 
       ${buildAppointmentsSection()}
 
-      <div class="card" style="margin-bottom:24px">
-        <div class="card-header">
-          <h4>Meine Skills</h4>
-          <button class="btn btn-ghost btn-sm" id="goto-sops">Zur Wissensdatenbank →</button>
-        </div>
-        ${buildSkillCards()}
-      </div>
-
       ${evaluations.length > 1 ? `
-        <div class="card">
+        <div class="card" style="margin-bottom:24px">
           <div class="card-header"><h4>Bewertungsverlauf</h4></div>
           <div class="table-wrapper">
             <table>
@@ -434,6 +425,14 @@ export function EmployeeView({ user, onNavigate }) {
           </div>
         </div>
       ` : ''}
+
+      <div class="card">
+        <div class="card-header">
+          <h4>Meine Skills</h4>
+          <button class="btn btn-ghost btn-sm" id="goto-sops">Zur Wissensdatenbank →</button>
+        </div>
+        ${buildSkillCards()}
+      </div>
     `
   }
 

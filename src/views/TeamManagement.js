@@ -452,11 +452,10 @@ export function TeamManagement({ user }) {
         employee_id:    empId,
         manager_id:     user.id,
         scheduled_date: date,
-        scheduled_time: time,
         type:           selectedType,
         location,
         meet_link:      meetLink,
-        note,
+        note:           [note, time ? `Uhrzeit: ${time}` : null].filter(Boolean).join(' · ') || null,
         status:         'pending_employee',
         initiated_by:   user.id,
       })
