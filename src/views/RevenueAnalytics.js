@@ -22,6 +22,7 @@ export function RevenueAnalytics({ user }) {
   let perfMonth = _now.getMonth() + 1
   let perfData        = []   // rows from get_employee_performance RPC
   let topServicesData = []   // rows from get_top_services_analysis RPC
+  let hoursData       = []   // rows from employee_daily_hours
 
   // ── Date helpers ──────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ export function RevenueAnalytics({ user }) {
     const [locRes, profRes, treatRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
       supabase.from('profiles').select('id, full_name, location_id').eq('is_manager', false),
-      supabase.from('treatments').select('id, name').order('name'),
+      supabase.from('treatments').select('id, name, duration').order('name'),
     ])
     locations  = locRes.data  ?? []
     profiles   = profRes.data ?? []
@@ -49,7 +50,7 @@ export function RevenueAnalytics({ user }) {
 
     // null → 'all' for managers without an assigned location
     if (!selectedLocationId) selectedLocationId = 'all'
-    await Promise.all([loadLogs(), loadTarget(), loadPerfData(), loadTopServices()])
+    await Promise.all([loadLogs(), loadTarget(), loadHours(), loadPerfData(), loadTopServices()])
   }
 
   async function loadLogs() {
@@ -105,6 +106,21 @@ export function RevenueAnalytics({ user }) {
     }
     const loc = locations.find(l => l.id === selectedLocationId)
     dailyTarget = Number(loc?.daily_revenue_target ?? 0)
+  }
+
+  async function loadHours() {
+    let q = supabase
+      .from('employee_daily_hours')
+      .select('employee_id, date, hours_worked, break_minutes, location_id')
+      .gte('date', dateFrom)
+      .lte('date', dateTo)
+
+    if (selectedLocationId && selectedLocationId !== 'all') {
+      q = q.eq('location_id', selectedLocationId)
+    }
+
+    const { data } = await q
+    hoursData = data ?? []
   }
 
   // ── KPI calculations ──────────────────────────────────────────────────────
@@ -568,6 +584,29 @@ export function RevenueAnalytics({ user }) {
 
   // ── Main HTML ─────────────────────────────────────────────────────────────
 
+  function buildUtilizationTile() {
+    const totalNetMins = hoursData.reduce((s, h) => {
+      return s + Math.max(0, Number(h.hours_worked ?? 0) * 60 - Number(h.break_minutes ?? 0))
+    }, 0)
+    const activeLogs = filteredLogs().filter(l => !l.is_no_show)
+    const treatMins  = activeLogs.reduce((s, l) => {
+      const dur = Number(treatments.find(t => t.id === l.treatment_id)?.duration ?? 45)
+      return s + (dur > 0 ? dur : 45)
+    }, 0)
+    const utilPct = totalNetMins > 0 ? Math.min(Math.round((treatMins / totalNetMins) * 100), 999) : 0
+    const uColor  = utilPct >= 80 ? '#27AE60' : utilPct >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+    return `
+      <div class="stat-card">
+        <div class="stat-label">Auslastungs-Spion</div>
+        <div class="stat-value" style="color:${uColor}">${utilPct}%</div>
+        <div class="stat-sub">aktive Behandlungszeit / Präsenzzeit</div>
+        ${totalNetMins > 0
+          ? `<div style="font-size:0.68rem;color:var(--text-light);margin-top:4px">${(treatMins/60).toFixed(1)} Std. aktiv · ${(totalNetMins/60).toFixed(1)} Std. Präsenz</div>`
+          : '<div style="font-size:0.68rem;color:var(--text-light);margin-top:4px">Keine Zeiterfassung im Zeitraum</div>'}
+      </div>
+    `
+  }
+
   function periodSubtitle() {
     if (period === 'today') return 'Manager Übersicht · Heute'
     if (period === 'week')  return 'Manager Übersicht · Diese Woche'
@@ -648,6 +687,7 @@ export function RevenueAnalytics({ user }) {
             <div class="stat-value" style="color:var(--gold)">${fmt(k.totalTips)}</div>
             <div class="stat-sub">gesamt ${label.toLowerCase()}</div>
           </div>
+          ${buildUtilizationTile()}
         </div>
       </div>
 
@@ -702,7 +742,7 @@ export function RevenueAnalytics({ user }) {
         localStorage.setItem('analyticsPeriod', period)
         localStorage.setItem('analyticsFrom', dateFrom)
         localStorage.setItem('analyticsTo', dateTo)
-        await Promise.all([loadLogs(), loadTarget()])
+        await Promise.all([loadLogs(), loadTarget(), loadHours()])
         rerender()
       })
     })
@@ -711,21 +751,21 @@ export function RevenueAnalytics({ user }) {
       dateFrom = e.target.value || localDate()
       period = ''
       localStorage.setItem('analyticsFrom', dateFrom)
-      await Promise.all([loadLogs(), loadTarget()])
+      await Promise.all([loadLogs(), loadTarget(), loadHours()])
       rerender()
     })
     container.querySelector('#date-to')?.addEventListener('change', async e => {
       dateTo = e.target.value || localDate()
       period = ''
       localStorage.setItem('analyticsTo', dateTo)
-      await Promise.all([loadLogs(), loadTarget()])
+      await Promise.all([loadLogs(), loadTarget(), loadHours()])
       rerender()
     })
 
     container.querySelector('#analytics-location')?.addEventListener('change', async e => {
       selectedLocationId = e.target.value || 'all'
       localStorage.setItem('selectedLocationId', selectedLocationId)
-      await Promise.all([loadLogs(), loadTarget()])
+      await Promise.all([loadLogs(), loadTarget(), loadHours()])
       rerender()
     })
 
