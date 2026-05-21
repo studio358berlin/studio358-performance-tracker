@@ -11,9 +11,11 @@ export function RevenueAnalytics({ user }) {
 
   let selectedLocationId = localStorage.getItem('selectedLocationId') || user?.profile?.location_id || null
   let selectedEmployeeId = null
-  let period       = localStorage.getItem('analyticsPeriod') || 'today'
-  let selectedDate = localStorage.getItem('analyticsDate')   || localDate()
-  let container = null
+  let period        = localStorage.getItem('analyticsPeriod') || 'today'
+  let dateFrom      = localStorage.getItem('analyticsFrom')   || localDate()
+  let dateTo        = localStorage.getItem('analyticsTo')     || localDate()
+  let container     = null
+  let clockInterval = null
 
   // Performance matrix state
   const _now   = new Date()
@@ -25,31 +27,13 @@ export function RevenueAnalytics({ user }) {
   // ── Date helpers ──────────────────────────────────────────────────────────
 
   function dateRange() {
-    // anchor at noon to avoid DST edge cases
-    const anchor  = new Date(selectedDate + 'T12:00:00')
-    const start   = new Date(selectedDate + 'T00:00:00')
-    const end     = new Date(selectedDate + 'T23:59:59')
+    const from    = new Date(dateFrom + 'T00:00:00').toISOString()
+    const to      = new Date(dateTo   + 'T23:59:59').toISOString()
     const fmtDate = d => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
-
-    if (period === 'today') {
-      return {
-        from:  start.toISOString(),
-        to:    end.toISOString(),
-        label: selectedDate === localDate() ? 'Heute' : fmtDate(anchor),
-      }
-    }
-    if (period === 'week') {
-      const mon = new Date(anchor)
-      mon.setDate(anchor.getDate() - (anchor.getDay() === 0 ? 6 : anchor.getDay() - 1))
-      mon.setHours(0, 0, 0, 0)
-      const sun = new Date(mon)
-      sun.setDate(mon.getDate() + 6); sun.setHours(23, 59, 59, 999)
-      return { from: mon.toISOString(), to: sun.toISOString(), label: fmtDate(mon) + ' – ' + fmtDate(sun) }
-    }
-    // month — full calendar month of the anchor date
-    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 0, 0, 0, 0)
-    const last  = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999)
-    return { from: first.toISOString(), to: last.toISOString(), label: first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) }
+    const label   = dateFrom === dateTo
+      ? (dateFrom === localDate() ? 'Heute' : fmtDate(new Date(dateFrom + 'T12:00:00')))
+      : fmtDate(new Date(dateFrom + 'T12:00:00')) + ' – ' + fmtDate(new Date(dateTo + 'T12:00:00'))
+    return { from, to, label }
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -108,7 +92,7 @@ export function RevenueAnalytics({ user }) {
     if (!selectedLocationId || selectedLocationId === 'all') { dailyTarget = 0; return }
 
     // Check for a date-override first (uses selectedDate, not system clock)
-    const today = selectedDate
+    const today = dateFrom
     const { data: override } = await supabase
       .from('daily_targets')
       .select('target_override')
@@ -519,7 +503,7 @@ export function RevenueAnalytics({ user }) {
       .sort((a, b) => b[1].revenue - a[1].revenue)
       .forEach(([name, v]) => {
         const avg = v.count > 0 ? v.revenue / v.count : 0
-        lines.push(`${q_(name)};${v.count};${fmtCur(v.revenue)};${fmtCur(avg)}`)
+        lines.push(`${q_(name)};${q_(v.count)};${q_(fmtCur(v.revenue))};${q_(fmtCur(avg))}`)
       })
 
     lines.push('')
@@ -542,7 +526,7 @@ export function RevenueAnalytics({ user }) {
       .sort((a, b) => b[1].revenue - a[1].revenue)
       .forEach(([name, v]) => {
         const avg = v.count > 0 ? v.revenue / v.count : 0
-        lines.push(`${q_(name)};${v.count};${fmtCur(v.revenue)};${fmtCur(avg)};${fmtCur(v.tips)}`)
+        lines.push(`${q_(name)};${q_(v.count)};${q_(fmtCur(v.revenue))};${q_(fmtCur(avg))};${q_(fmtCur(v.tips))}`)
       })
 
     lines.push('')
@@ -554,9 +538,8 @@ export function RevenueAnalytics({ user }) {
 
     all.forEach(l => {
       const d   = new Date(l.created_at)
-      const dt  = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                + ' '
-                + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      const pad = n => String(n).padStart(2, '0')
+      const dt  = `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
       const loc    = locName(l.location_id)
       const emp    = empName(l.employee_id)
       const treat  = treatName(l.treatment_id)
@@ -568,7 +551,7 @@ export function RevenueAnalytics({ user }) {
       const tip    = fmtCur(l.tip ?? 0)
       const status = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'No-Show' : 'Aktiv'
 
-      lines.push(`${q_(dt)};${q_(loc)};${q_(emp)};${q_(treat)};${price};${pm1};${amt1};${pm2};${amt2};${tip};${status}`)
+      lines.push(`${q_(dt)};${q_(loc)};${q_(emp)};${q_(treat)};${q_(price)};${q_(pm1)};${q_(amt1)};${q_(pm2)};${q_(amt2)};${q_(tip)};${q_(status)}`)
     })
 
     // ── Download ────────────────────────────────────────────────────────────
@@ -593,10 +576,10 @@ export function RevenueAnalytics({ user }) {
     return `
       <div class="page-header">
         <div>
-          <h2>Umsatz-Analytics</h2>
-          <p style="color:var(--text-light);font-size:0.875rem">Manager-Übersicht · ${label}</p>
+          <h2>Umsatz Cockpit</h2>
+          <p style="color:var(--text-light);font-size:0.875rem">Manager Übersicht · Live: <span id="live-clock">${fmtLiveClock()}</span></p>
         </div>
-        <button class="btn btn-sm btn-accent" id="export-csv-btn">↓ Controlling-Export (.CSV)</button>
+        <button class="btn btn-sm btn-accent" id="export-csv-btn">↓ Umsatz Export (.CSV)</button>
       </div>
 
       <!-- Filter bar -->
@@ -606,8 +589,14 @@ export function RevenueAnalytics({ user }) {
           <button class="location-tab ${period==='week'  ? 'active':''}" data-period="week">Woche</button>
           <button class="location-tab ${period==='month' ? 'active':''}" data-period="month">Monat</button>
         </div>
-        <input type="date" id="analytics-date" value="${selectedDate}" max="${localDate()}"
-          style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
+          <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+            style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
+          <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+            style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+        </label>
         <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
           <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
           ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
@@ -623,7 +612,7 @@ export function RevenueAnalytics({ user }) {
         <!-- Gauge: only meaningful for "today" -->
         <div class="card" style="padding:8px">
           <div style="text-align:center;font-size:0.72rem;font-weight:600;color:var(--text-light);letter-spacing:0.08em;text-transform:uppercase;padding-top:12px">Umsatz-Uhr</div>
-          ${period === 'today'
+          ${dateFrom === dateTo && dateFrom === localDate()
             ? buildGauge(k.targetPct)
             : `<div style="padding:24px;text-align:center;color:var(--text-light);font-size:0.82rem">Nur für Tagesansicht verfügbar.</div>`
           }
@@ -687,15 +676,42 @@ export function RevenueAnalytics({ user }) {
     container.querySelectorAll('.location-tab[data-period]').forEach(btn => {
       btn.addEventListener('click', async () => {
         period = btn.dataset.period
+        const today = localDate()
+        if (period === 'today') {
+          dateFrom = today; dateTo = today
+        } else if (period === 'week') {
+          const anchor = new Date(today + 'T12:00:00')
+          const dow = anchor.getDay() || 7
+          const mon = new Date(anchor); mon.setDate(anchor.getDate() - dow + 1); mon.setHours(0,0,0,0)
+          const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+          dateFrom = mon.toISOString().slice(0,10)
+          dateTo   = sun.toISOString().slice(0,10)
+        } else {
+          const anchor = new Date(today + 'T12:00:00')
+          const first  = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+          const last   = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+          dateFrom = first.toISOString().slice(0,10)
+          dateTo   = last.toISOString().slice(0,10)
+        }
         localStorage.setItem('analyticsPeriod', period)
+        localStorage.setItem('analyticsFrom', dateFrom)
+        localStorage.setItem('analyticsTo', dateTo)
         await Promise.all([loadLogs(), loadTarget()])
         rerender()
       })
     })
 
-    container.querySelector('#analytics-date')?.addEventListener('change', async e => {
-      selectedDate = e.target.value || localDate()
-      localStorage.setItem('analyticsDate', selectedDate)
+    container.querySelector('#date-from')?.addEventListener('change', async e => {
+      dateFrom = e.target.value || localDate()
+      period = ''
+      localStorage.setItem('analyticsFrom', dateFrom)
+      await Promise.all([loadLogs(), loadTarget()])
+      rerender()
+    })
+    container.querySelector('#date-to')?.addEventListener('change', async e => {
+      dateTo = e.target.value || localDate()
+      period = ''
+      localStorage.setItem('analyticsTo', dateTo)
       await Promise.all([loadLogs(), loadTarget()])
       rerender()
     })
@@ -723,10 +739,18 @@ export function RevenueAnalytics({ user }) {
     }
     container.querySelector('#perf-month')?.addEventListener('change', onPerfChange)
     container.querySelector('#perf-year')?.addEventListener('change',  onPerfChange)
+
+    if (clockInterval) clearInterval(clockInterval)
+    clockInterval = setInterval(() => {
+      const el = container.querySelector('#live-clock')
+      if (el) el.textContent = fmtLiveClock()
+      else { clearInterval(clockInterval); clockInterval = null }
+    }, 1000)
   }
 
   function rerender() {
     if (!container) return
+    if (clockInterval) { clearInterval(clockInterval); clockInterval = null }
     container.innerHTML = buildHTML()
     attachEvents()
   }
@@ -749,6 +773,12 @@ export function RevenueAnalytics({ user }) {
 function localDate() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+function fmtLiveClock() {
+  const d   = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 function fmt(n) {

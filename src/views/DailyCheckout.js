@@ -11,31 +11,18 @@ export function DailyCheckout({ user, onNavigate }) {
   let container          = null
   let hoursToday         = null   // employee's own hours entry for today
   let teamHoursMap       = {}     // manager: employee_id → hours entry
-  let selectedDate       = localDate()
+  let dateFrom           = localDate()
+  let dateTo             = localDate()
   let period             = localStorage.getItem('checkoutPeriod') || 'today'
   let clockInTime        = localStorage.getItem('clockIn_' + localDate()) || null
 
   // ── Date range helper ─────────────────────────────────────────────────────────
 
   function logDateRange() {
-    const anchor = new Date(selectedDate + 'T12:00:00')
-    if (period === 'today') {
-      return {
-        from: new Date(selectedDate + 'T00:00:00').toISOString(),
-        to:   new Date(selectedDate + 'T23:59:59').toISOString(),
-      }
+    return {
+      from: new Date(dateFrom + 'T00:00:00').toISOString(),
+      to:   new Date(dateTo   + 'T23:59:59').toISOString(),
     }
-    if (period === 'week') {
-      const mon = new Date(anchor)
-      mon.setDate(anchor.getDate() - (anchor.getDay() === 0 ? 6 : anchor.getDay() - 1))
-      mon.setHours(0, 0, 0, 0)
-      const sun = new Date(mon); sun.setDate(mon.getDate() + 6); sun.setHours(23, 59, 59, 999)
-      return { from: mon.toISOString(), to: sun.toISOString() }
-    }
-    // month
-    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 0, 0, 0, 0)
-    const last  = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999)
-    return { from: first.toISOString(), to: last.toISOString() }
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────────
@@ -67,7 +54,7 @@ export function DailyCheckout({ user, onNavigate }) {
     }
 
     // Load working-hours entries for the selected date
-    const todayDate = selectedDate
+    const todayDate = dateFrom
     if (isManager) {
       const { data: hData } = await supabase
         .from('employee_daily_hours').select('*').eq('date', todayDate)
@@ -103,9 +90,9 @@ export function DailyCheckout({ user, onNavigate }) {
   // ── Computed helpers ─────────────────────────────────────────────────────────
 
   function periodLabel() {
-    if (period === 'week')  return 'diese Woche'
-    if (period === 'month') return 'diesen Monat'
-    return selectedDate === localDate() ? 'heute' : new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
+    const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })
+    if (dateFrom !== dateTo) return `${fmtD(dateFrom)} – ${fmtD(dateTo)}`
+    return dateFrom === localDate() ? 'heute' : fmtD(dateFrom)
   }
 
   function locationTreatments() {
@@ -148,7 +135,7 @@ export function DailyCheckout({ user, onNavigate }) {
       showToast('Bitte zuerst einen konkreten Standort auswählen.', 'error')
       return false
     }
-    if (!logId && selectedDate !== localDate()) {
+    if (!logId && dateFrom !== localDate()) {
       showToast('Historische Ansicht – neue Einträge nur für heute möglich.', 'error')
       return false
     }
@@ -235,7 +222,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
   async function refreshDay() {
     todayLogs = await fetchTodayLogs()
-    const dt = selectedDate
+    const dt = dateFrom
     if (isManager) {
       const { data: hData } = await supabase.from('employee_daily_hours').select('*').eq('date', dt)
       teamHoursMap = Object.fromEntries((hData ?? []).map(h => [h.employee_id, h]))
@@ -962,7 +949,11 @@ export function DailyCheckout({ user, onNavigate }) {
       <div class="page-header">
         <div>
           <h2>Tagesabschluss</h2>
-          <p style="color:var(--text-light);font-size:0.875rem">${new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long' })}${selectedDate !== localDate() ? ' · Historische Ansicht' : ''}</p>
+          <p style="color:var(--text-light);font-size:0.875rem">${
+            dateFrom === dateTo
+              ? new Date(dateFrom + 'T12:00:00').toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long' })
+              : new Date(dateFrom + 'T12:00:00').toLocaleDateString('de-DE', { day:'numeric', month:'short' }) + ' – ' + new Date(dateTo + 'T12:00:00').toLocaleDateString('de-DE', { day:'numeric', month:'short' })
+          }${dateFrom !== localDate() ? ' · Historische Ansicht' : ''}</p>
         </div>
       </div>
 
@@ -983,19 +974,36 @@ export function DailyCheckout({ user, onNavigate }) {
                 ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
               </select>
             </div>
-            <div>
-              <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Datum</label>
-              <input type="date" id="date-picker" value="${selectedDate}" max="${localDate()}"
-                style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
+            <div style="display:flex;gap:8px">
+              <div>
+                <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Von</label>
+                <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+                  style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
+              </div>
+              <div>
+                <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Bis</label>
+                <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+                  style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
+              </div>
             </div>
           </div>
         </div>
       ` : `
-        <div style="margin-bottom:16px">
+        <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
           <div class="location-tabs" style="margin:0">
             <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
             <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
             <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
+              <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+                style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
+              <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+                style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+            </label>
           </div>
         </div>
       `}
@@ -1111,6 +1119,23 @@ export function DailyCheckout({ user, onNavigate }) {
     container.querySelectorAll('.location-tab[data-period]').forEach(btn => {
       btn.addEventListener('click', async () => {
         period = btn.dataset.period
+        const today = localDate()
+        if (period === 'today') {
+          dateFrom = today; dateTo = today
+        } else if (period === 'week') {
+          const anchor = new Date(today + 'T12:00:00')
+          const dow = anchor.getDay() || 7
+          const mon = new Date(anchor); mon.setDate(anchor.getDate() - dow + 1); mon.setHours(0,0,0,0)
+          const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+          dateFrom = mon.toISOString().slice(0,10)
+          dateTo   = sun.toISOString().slice(0,10)
+        } else {
+          const anchor = new Date(today + 'T12:00:00')
+          const first  = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+          const last   = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+          dateFrom = first.toISOString().slice(0,10)
+          dateTo   = last.toISOString().slice(0,10)
+        }
         localStorage.setItem('checkoutPeriod', period)
         await refreshDay()
       })
@@ -1123,8 +1148,14 @@ export function DailyCheckout({ user, onNavigate }) {
       rerender()
     })
 
-    container.querySelector('#date-picker')?.addEventListener('change', async e => {
-      selectedDate = e.target.value || localDate()
+    container.querySelector('#date-from')?.addEventListener('change', async e => {
+      dateFrom = e.target.value || localDate()
+      period = ''
+      await refreshDay()
+    })
+    container.querySelector('#date-to')?.addEventListener('change', async e => {
+      dateTo = e.target.value || localDate()
+      period = ''
       await refreshDay()
     })
 
