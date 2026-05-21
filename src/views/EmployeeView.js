@@ -182,7 +182,7 @@ export function EmployeeView({ user, onNavigate }) {
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <h2>Meine Performance</h2>
+          <h2>Performance Tracker</h2>
           <p style="color:var(--text-light);font-size:0.875rem">
             Willkommen, ${user.profile?.full_name || user.email}
             · <span class="badge ${level === 'senior' ? 'badge-aubergine' : 'badge-gold'}">${level}</span>

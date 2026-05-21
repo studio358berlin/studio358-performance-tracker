@@ -398,7 +398,7 @@ export function DailyCheckout({ user, onNavigate }) {
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
 
     const profileLocId = user?.profile?.location_id ?? null
-    const defaultLocId = (selectedLocationId && selectedLocationId !== 'all') ? selectedLocationId : profileLocId
+    const defaultLocId = profileLocId ?? (selectedLocationId !== 'all' ? selectedLocationId : null)
     const startStr     = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 
     overlay.innerHTML = `
@@ -453,55 +453,23 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   function buildMyHoursCard() {
-    if (isManager) return ''
+    if (isManager || !hoursToday) return ''
     const treatMins = todayLogs
       .filter(l => !l.is_cancelled && !l.is_no_show)
       .reduce((s, l) => s + Number(l.treatment?.duration ?? treatments.find(t => t.id === l.treatment_id)?.duration ?? 60), 0)
-
-    let utilStr = '–'
-    if (hoursToday) {
-      const netMins = Math.max(1, hoursToday.hours_worked * 60 - hoursToday.break_minutes)
-      const util    = Math.round((treatMins / netMins) * 100)
-      const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
-      utilStr = `<span style="color:${uCol};font-weight:700">${util}%</span>`
-    }
+    const netMins = Math.max(1, hoursToday.hours_worked * 60 - hoursToday.break_minutes)
+    const util    = Math.round((treatMins / netMins) * 100)
+    const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+    const netH    = Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)
 
     return `
-      <div class="card" style="margin-bottom:24px">
-        <div class="card-header">
-          <h4>Meine Arbeitszeit heute</h4>
-          <div style="display:flex;gap:6px;align-items:center">
-            ${!!clockInTime && dateFrom === localDate() ? `<button class="btn btn-sm btn-early-checkout" style="background:var(--gold);color:#fff;border:none;cursor:pointer">⏹ Früher Feierabend</button>` : ''}
-            <button class="btn ${hoursToday ? 'btn-ghost' : 'btn-accent'} btn-sm" id="btn-log-hours">
-              ${hoursToday ? '✏ Bearbeiten' : '+ Jetzt erfassen'}
-            </button>
-          </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:7px 14px;margin-bottom:16px;background:var(--cream);border-radius:var(--radius-sm);font-size:0.8rem;color:var(--text-mid)">
+        <span style="font-weight:600;color:var(--aubergine)">Meine Arbeitszeit</span>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <span>${hoursToday.hours_worked} Std. · ${hoursToday.break_minutes} Min. Pause · <strong style="color:var(--aubergine)">${netH} Std. Netto</strong></span>
+          <span style="font-weight:700;color:${uCol}">Auslastung: ${util}%</span>
+          <button class="btn btn-ghost btn-sm" id="btn-log-hours" style="padding:2px 8px;font-size:0.75rem">✏</button>
         </div>
-        ${hoursToday ? `
-          <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
-            <div>
-              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Arbeitszeit</div>
-              <div style="font-weight:700;color:var(--aubergine)">${hoursToday.hours_worked} Std.</div>
-            </div>
-            <div>
-              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Pause</div>
-              <div style="font-weight:600;color:var(--text-mid)">${hoursToday.break_minutes} Min.</div>
-            </div>
-            <div>
-              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Netto</div>
-              <div style="font-weight:700;color:var(--aubergine)">${Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)} Std.</div>
-            </div>
-            <div>
-              <div style="font-size:0.68rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Auslastung</div>
-              <div>${utilStr}</div>
-            </div>
-          </div>
-        ` : `
-          <div class="empty-state" style="padding:24px 20px">
-            <span class="empty-state-icon">◉</span>
-            <p>Arbeitszeit noch nicht erfasst.</p>
-          </div>
-        `}
       </div>
     `
   }
@@ -1009,6 +977,7 @@ export function DailyCheckout({ user, onNavigate }) {
       </div>
 
       ${!isManager ? buildHoursBanner() : ''}
+      ${buildMyHoursCard()}
 
       ${isManager ? `
         <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:8px">
@@ -1098,8 +1067,6 @@ export function DailyCheckout({ user, onNavigate }) {
       </div>
 
       ${buildTeamStatus()}
-
-      ${buildMyHoursCard()}
 
       <div class="card">
         <div class="card-header"><h4>${isManager ? (period === 'week' ? 'Einträge diese Woche' : period === 'month' ? 'Einträge diesen Monat' : 'Heutige Einträge') : 'Einträge am Tag'}</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
