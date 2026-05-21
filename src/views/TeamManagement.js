@@ -284,8 +284,8 @@ export function TeamManagement({ user }) {
 
   function buildAppointmentsPanel(emp) {
     const appts      = appointmentsMap[emp.id] ?? []
-    const empReqs    = appts.filter(a => a.status === 'pending_manager'  && a.initiated_by === 'employee')
-    const mgrPending = appts.filter(a => a.status === 'pending_employee' && a.initiated_by === 'manager')
+    const empReqs    = appts.filter(a => a.status === 'pending_manager'  && a.initiated_by === emp.id)
+    const mgrPending = appts.filter(a => a.status === 'pending_employee' && a.initiated_by !== emp.id)
     const confirmed  = appts.filter(a => a.status === 'confirmed')
     const isEmpty    = !empReqs.length && !mgrPending.length && !confirmed.length
     const fmtDate    = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
@@ -458,7 +458,7 @@ export function TeamManagement({ user }) {
         meet_link:      meetLink,
         note,
         status:         'pending_employee',
-        initiated_by:   'manager',
+        initiated_by:   user.id,
       })
 
       if (error) {

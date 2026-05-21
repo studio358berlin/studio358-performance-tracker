@@ -153,8 +153,8 @@ export function EmployeeView({ user, onNavigate }) {
     const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
     const fmtLoc  = l => ({ mitte: 'Berlin Mitte', kadewe: 'KaDeWe' }[l] ?? l ?? '–')
 
-    const pendingInvites    = appointments.filter(a => a.status === 'pending_employee' && a.initiated_by === 'manager')
-    const myPendingRequests = appointments.filter(a => a.status === 'pending_manager'  && a.initiated_by === 'employee')
+    const pendingInvites    = appointments.filter(a => a.status === 'pending_employee' && a.initiated_by !== user.id)
+    const myPendingRequests = appointments.filter(a => a.status === 'pending_manager'  && a.initiated_by === user.id)
     const confirmed         = appointments.filter(a => a.status === 'confirmed')
 
     const isEmpty = !pendingInvites.length && !myPendingRequests.length && !confirmed.length
@@ -276,7 +276,7 @@ export function EmployeeView({ user, onNavigate }) {
         scheduled_time: time,
         note,
         status:         'pending_manager',
-        initiated_by:   'employee',
+        initiated_by:   user.id,
         type:           'offline',
       })
       if (error) {
@@ -393,6 +393,8 @@ export function EmployeeView({ user, onNavigate }) {
         : `<div class="card" style="margin-bottom:24px"><div class="empty-state"><span class="empty-state-icon">◉</span><p>Noch keine Bewertung vorhanden.</p></div></div>`
       }
 
+      ${buildAppointmentsSection()}
+
       <div class="card" style="margin-bottom:24px">
         <div class="card-header">
           <h4>Meine Skills</h4>
@@ -400,8 +402,6 @@ export function EmployeeView({ user, onNavigate }) {
         </div>
         ${buildSkillCards()}
       </div>
-
-      ${buildAppointmentsSection()}
 
       ${evaluations.length > 1 ? `
         <div class="card">

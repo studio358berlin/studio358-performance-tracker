@@ -17,13 +17,19 @@ CREATE TABLE IF NOT EXISTS public.manager_appointments (
   --   'pending_employee' → manager invited, awaiting employee confirmation
   --   'confirmed'        → both parties confirmed
   --   'cancelled'        → declined or cancelled
-  initiated_by   TEXT NOT NULL DEFAULT 'employee',  -- 'employee' | 'manager'
+  initiated_by   UUID REFERENCES public.profiles(id),  -- UUID of user who created the appointment
   created_at     TIMESTAMPTZ DEFAULT now()
 );
 
+-- If the table already exists but is missing initiated_by, add the column:
+ALTER TABLE public.manager_appointments
+  ADD COLUMN IF NOT EXISTS initiated_by UUID REFERENCES public.profiles(id);
+
 ALTER TABLE public.manager_appointments ENABLE ROW LEVEL SECURITY;
 
--- Simple permissive policy — all authenticated users can read/write
+-- Drop old policy if it exists, then recreate
+DROP POLICY IF EXISTS "authenticated_all" ON public.manager_appointments;
+
 CREATE POLICY "authenticated_all"
   ON public.manager_appointments
   FOR ALL
