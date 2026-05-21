@@ -211,7 +211,10 @@ export function EmployeeView({ user, onNavigate }) {
                   ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
                 </div>
                 ${a.type === 'online' && a.meet_link ? `
-                  <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet beitreten</a>
+                  <div style="display:flex;gap:6px;flex-shrink:0">
+                    <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap">📹 Meet beitreten</a>
+                    <button class="btn-copy-meet" data-link="${a.meet_link}" style="background:var(--cream-dark);border:none;border-radius:var(--radius-sm);padding:6px 10px;font-size:0.85rem;cursor:pointer" title="Link kopieren">📋</button>
+                  </div>
                 ` : ''}
               </div>
             `).join('')}
@@ -476,6 +479,19 @@ export function EmployeeView({ user, onNavigate }) {
         if (error) { showToast('Fehler: ' + error.message, 'error'); return }
         showToast('Einladung abgelehnt.')
         await loadData(); rerender()
+      })
+    })
+
+    container.querySelectorAll('.btn-copy-meet[data-link]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.link)
+          const orig = btn.textContent
+          btn.textContent = '✓'
+          setTimeout(() => { btn.textContent = orig }, 1500)
+        } catch (_) {
+          showToast('Meet-Link: ' + btn.dataset.link)
+        }
       })
     })
 
