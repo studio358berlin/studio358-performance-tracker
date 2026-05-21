@@ -544,15 +544,17 @@ export function DailyCheckout({ user, onNavigate }) {
     const netH = Math.max(0, Number(hoursToday.hours_worked) - Number(hoursToday.break_minutes) / 60).toFixed(1)
 
     if (active) {
+      const startTime = new Date(clockInTime).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
       return `
         <button class="btn-early-checkout" style="
-          display:flex;align-items:center;justify-content:center;gap:8px;
+          display:flex;align-items:center;justify-content:space-between;
           width:100%;padding:14px 18px;margin-bottom:20px;
           border:none;border-radius:var(--radius-md);cursor:pointer;
-          background:var(--gold);color:#fff;font-weight:700;font-size:0.95rem;
+          background:#27AE60;color:#fff;
           box-shadow:0 2px 10px rgba(0,0,0,0.18);
         ">
-          ➔ Schicht früher beenden
+          <span style="font-size:0.85rem;opacity:0.9">✓ Schicht läuft seit ${startTime} Uhr</span>
+          <span style="font-weight:700;font-size:0.9rem">➔ FRÜHER BEENDEN / AUSCHECKEN</span>
         </button>
       `
     }

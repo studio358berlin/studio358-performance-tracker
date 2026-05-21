@@ -19,13 +19,14 @@ export function TeamManagement({ user }) {
   let container         = null
   let availableSkills   = []   // from public.skills table
   let employeeSkillsMap = {}   // employee_id → skill_id[]
+  let appointmentsMap   = {}   // employee_id → manager_appointments[]
 
   async function loadData() {
     const now             = new Date()
     const firstOfMonth    = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
 
-    const [empRes, evalRes, logsRes, hoursRes, targetsRes, skillsRes, empSkillsRes] = await Promise.all([
+    const [empRes, evalRes, logsRes, hoursRes, targetsRes, skillsRes, empSkillsRes, apptsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
@@ -38,6 +39,7 @@ export function TeamManagement({ user }) {
         .eq('month', now.getMonth() + 1),
       supabase.from('skills').select('*').order('name'),
       supabase.from('employee_skills').select('employee_id, skill_id'),
+      supabase.from('manager_appointments').select('*').order('scheduled_date', { ascending: false }),
     ])
     employees     = empRes.data  ?? []
     evaluations   = evalRes.data ?? []
@@ -60,6 +62,13 @@ export function TeamManagement({ user }) {
     for (const row of (empSkillsRes.data ?? [])) {
       if (!employeeSkillsMap[row.employee_id]) employeeSkillsMap[row.employee_id] = []
       employeeSkillsMap[row.employee_id].push(row.skill_id)
+    }
+
+    // Build employee_id → appointments[] lookup
+    appointmentsMap = {}
+    for (const a of (apptsRes.data ?? [])) {
+      if (!appointmentsMap[a.employee_id]) appointmentsMap[a.employee_id] = []
+      appointmentsMap[a.employee_id].push(a)
     }
 
     // Aggregate monthly tips per employee from logs
@@ -271,6 +280,199 @@ export function TeamManagement({ user }) {
     })
   }
 
+  // ── Appointments ───────────────────────────────────────────────────────────
+
+  function buildAppointmentsPanel(emp) {
+    const appts      = appointmentsMap[emp.id] ?? []
+    const empReqs    = appts.filter(a => a.status === 'pending_manager'  && a.initiated_by === 'employee')
+    const mgrPending = appts.filter(a => a.status === 'pending_employee' && a.initiated_by === 'manager')
+    const confirmed  = appts.filter(a => a.status === 'confirmed')
+    const isEmpty    = !empReqs.length && !mgrPending.length && !confirmed.length
+    const fmtDate    = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+
+    return `
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <h4>📅 Termine & Gespräche</h4>
+          <button class="btn btn-ghost btn-sm" id="btn-new-mgr-appt" data-emp="${emp.id}">+ Termin anlegen</button>
+        </div>
+
+        ${empReqs.length > 0 ? `
+          <div style="padding:12px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--terracotta);margin-bottom:8px">Anfragen vom Mitarbeiter</div>
+            ${empReqs.map(a => `
+              <div style="padding:10px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  ${a.note ? `<div style="font-size:0.78rem;color:var(--text-mid)">${a.note}</div>` : ''}
+                </div>
+                <button class="btn-confirm-emp-req" data-id="${a.id}" style="background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);padding:5px 12px;font-size:0.8rem;cursor:pointer;font-weight:600;flex-shrink:0">Bestätigen</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${mgrPending.length > 0 ? `
+          <div style="padding:12px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Gesendete Einladungen · Ausstehend</div>
+            ${mgrPending.map(a => `
+              <div style="padding:8px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:0.85rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
+                </div>
+                <span style="font-size:0.72rem;color:var(--gold);background:rgba(212,162,66,0.12);padding:3px 8px;border-radius:var(--radius-sm);white-space:nowrap">Ausstehend</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${confirmed.length > 0 ? `
+          <div style="padding:12px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">Bestätigte Termine</div>
+            ${confirmed.map(a => `
+              <div style="padding:8px 0;border-bottom:1px solid var(--cream);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
+                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
+                </div>
+                ${a.type === 'online' && a.meet_link ? `
+                  <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:5px 10px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet</a>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${isEmpty ? `
+          <div class="empty-state" style="padding:20px">
+            <span class="empty-state-icon" style="font-size:1.5rem">📅</span>
+            <p>Noch keine Termine für ${emp.full_name}.</p>
+          </div>
+        ` : '<div style="height:4px"></div>'}
+      </div>
+    `
+  }
+
+  function openManagerAppointmentModal(empId) {
+    const emp   = employees.find(e => e.id === empId)
+    const today = localDate()
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Termin anlegen</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${emp?.full_name ?? '–'}</div>
+          </div>
+          <button id="ma-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:0.85rem;color:var(--text-mid);margin-bottom:6px">Format</div>
+            <div style="display:flex;gap:8px">
+              <button type="button" id="ma-type-offline" style="flex:1;padding:8px;border:2px solid var(--aubergine);border-radius:var(--radius-sm);background:var(--aubergine);color:#fff;font-weight:600;font-size:0.85rem;cursor:pointer">📍 Offline</button>
+              <button type="button" id="ma-type-online"  style="flex:1;padding:8px;border:2px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);color:var(--text-mid);font-size:0.85rem;cursor:pointer">🌐 Online</button>
+            </div>
+          </div>
+          <div id="ma-field-location">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Standort
+              <select id="ma-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
+                <option value="mitte">Berlin Mitte</option>
+                <option value="kadewe">KaDeWe</option>
+              </select>
+            </label>
+          </div>
+          <div id="ma-field-meet" style="display:none">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Google Meet Link
+              <input id="ma-meet" type="url" placeholder="https://meet.google.com/..." style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
+            </label>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Datum
+            <input id="ma-date" type="date" min="${today}" value="${today}" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Uhrzeit (optional)
+            <input id="ma-time" type="time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Notiz (optional)
+            <textarea id="ma-note" rows="2" placeholder="Thema des Gesprächs..." style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;resize:none;font-family:inherit"></textarea>
+          </label>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="ma-save" class="btn btn-accent" style="width:100%;justify-content:center">Einladung senden</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    let selectedType = 'offline'
+    const offlineBtn  = overlay.querySelector('#ma-type-offline')
+    const onlineBtn   = overlay.querySelector('#ma-type-online')
+    const fieldLoc    = overlay.querySelector('#ma-field-location')
+    const fieldMeet   = overlay.querySelector('#ma-field-meet')
+
+    function setType(t) {
+      selectedType = t
+      const onBtn  = t === 'offline' ? offlineBtn : onlineBtn
+      const offBtn = t === 'offline' ? onlineBtn  : offlineBtn
+      onBtn.style.borderColor  = 'var(--aubergine)'; onBtn.style.background  = 'var(--aubergine)'; onBtn.style.color  = '#fff'; onBtn.style.fontWeight  = '600'
+      offBtn.style.borderColor = 'var(--cream-dark)'; offBtn.style.background = 'var(--white)'; offBtn.style.color = 'var(--text-mid)'; offBtn.style.fontWeight = '400'
+      fieldLoc.style.display  = t === 'offline' ? '' : 'none'
+      fieldMeet.style.display = t === 'online'  ? '' : 'none'
+    }
+
+    offlineBtn.addEventListener('click', () => setType('offline'))
+    onlineBtn.addEventListener('click',  () => setType('online'))
+    overlay.querySelector('#ma-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#ma-save').addEventListener('click', async () => {
+      const date     = overlay.querySelector('#ma-date').value
+      const time     = overlay.querySelector('#ma-time').value || null
+      const note     = overlay.querySelector('#ma-note').value.trim() || null
+      const location = selectedType === 'offline' ? (overlay.querySelector('#ma-location').value || null) : null
+      const meetLink = selectedType === 'online'  ? (overlay.querySelector('#ma-meet').value.trim() || null) : null
+
+      if (!date) { alert('Bitte wähle ein Datum.'); return }
+      if (selectedType === 'online' && !meetLink) { alert('Bitte gib einen Google Meet Link ein.'); return }
+
+      const btn = overlay.querySelector('#ma-save')
+      btn.disabled = true; btn.textContent = 'Senden...'
+
+      const { error } = await supabase.from('manager_appointments').insert({
+        employee_id:    empId,
+        manager_id:     user.id,
+        scheduled_date: date,
+        scheduled_time: time,
+        type:           selectedType,
+        location,
+        meet_link:      meetLink,
+        note,
+        status:         'pending_employee',
+        initiated_by:   'manager',
+      })
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Einladung senden'
+        return
+      }
+      showToast('Einladung gesendet!')
+      overlay.remove()
+      await loadData()
+      rerender()
+    })
+  }
+
   // ── HTML builders ──────────────────────────────────────────────────────────
 
   function buildSkillManager(emp) {
@@ -430,6 +632,8 @@ export function TeamManagement({ user }) {
         }) : ''}
 
       ${buildSkillManager(emp)}
+
+      ${buildAppointmentsPanel(emp)}
 
       <div class="card">
         <h4 style="margin-bottom:16px">Bewertungsverlauf</h4>
@@ -845,6 +1049,20 @@ export function TeamManagement({ user }) {
       await addCustomSkill(e.currentTarget.dataset.emp, val)
       await loadData()
       rerender()
+    })
+
+    container.querySelector('#btn-new-mgr-appt')?.addEventListener('click', e => {
+      openManagerAppointmentModal(e.currentTarget.dataset.emp)
+    })
+
+    container.querySelectorAll('.btn-confirm-emp-req[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { error } = await supabase.from('manager_appointments')
+          .update({ status: 'confirmed', manager_id: user.id }).eq('id', btn.dataset.id)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+        showToast('Termin bestätigt!')
+        await loadData(); rerender()
+      })
     })
 
     setTimeout(() => {

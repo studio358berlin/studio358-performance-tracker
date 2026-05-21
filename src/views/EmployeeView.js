@@ -16,13 +16,14 @@ export function EmployeeView({ user, onNavigate }) {
   let hoursData    = []   // employee_daily_hours rows for current month
   let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
   let employeeSkillsWithNames = []   // employee_skills JOIN skills — avoids UUID labels
+  let appointments = []              // manager_appointments for this employee
   let selectedSOPId = null
   let container = null
 
   async function loadData() {
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
 
-    const [evalRes, sopRes, hoursRes, analyticsRes, empSkillsRes] = await Promise.all([
+    const [evalRes, sopRes, hoursRes, analyticsRes, empSkillsRes, apptRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
@@ -36,6 +37,10 @@ export function EmployeeView({ user, onNavigate }) {
       supabase.from('employee_skills')
         .select('skill_id, skills(id, name, label, color, category)')
         .eq('employee_id', user.id),
+      supabase.from('manager_appointments')
+        .select('*')
+        .eq('employee_id', user.id)
+        .order('scheduled_date', { ascending: false }),
     ])
     const all    = evalRes.data ?? []
     allEntries   = all
@@ -50,6 +55,7 @@ export function EmployeeView({ user, onNavigate }) {
       color:    row.skills?.color || '#A08090',
       category: row.skills?.category || 'custom',
     }))
+    appointments = apptRes.data ?? []
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -141,6 +147,145 @@ export function EmployeeView({ user, onNavigate }) {
         ` : ''}
       </div>
     `
+  }
+
+  function buildAppointmentsSection() {
+    const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+    const fmtLoc  = l => ({ mitte: 'Berlin Mitte', kadewe: 'KaDeWe' }[l] ?? l ?? '–')
+
+    const pendingInvites    = appointments.filter(a => a.status === 'pending_employee' && a.initiated_by === 'manager')
+    const myPendingRequests = appointments.filter(a => a.status === 'pending_manager'  && a.initiated_by === 'employee')
+    const confirmed         = appointments.filter(a => a.status === 'confirmed')
+
+    const isEmpty = !pendingInvites.length && !myPendingRequests.length && !confirmed.length
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h4>📅 Manager-Gespräche & Termine</h4>
+          <button class="btn btn-ghost btn-sm" id="btn-new-appt">+ Termin anfragen</button>
+        </div>
+
+        ${pendingInvites.length > 0 ? `
+          <div style="padding:12px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--terracotta);margin-bottom:8px">Offene Einladungen vom Manager</div>
+            ${pendingInvites.map(a => `
+              <div style="padding:10px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online · Google Meet' : '📍 ' + fmtLoc(a.location)}</div>
+                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0">
+                  <button class="btn-confirm-appt" data-id="${a.id}" style="background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);padding:5px 10px;font-size:0.82rem;cursor:pointer;font-weight:600">✓</button>
+                  <button class="btn-decline-appt" data-id="${a.id}" style="background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);padding:5px 10px;font-size:0.82rem;cursor:pointer">✕</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${myPendingRequests.length > 0 ? `
+          <div style="padding:12px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Meine Anfragen · Ausstehend</div>
+            ${myPendingRequests.map(a => `
+              <div style="padding:8px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:0.85rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
+                </div>
+                <span style="font-size:0.72rem;color:var(--gold);background:rgba(212,162,66,0.12);padding:3px 8px;border-radius:var(--radius-sm);white-space:nowrap">Ausstehend</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${confirmed.length > 0 ? `
+          <div style="padding:12px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">Bestätigte Termine</div>
+            ${confirmed.map(a => `
+              <div style="padding:8px 0;border-bottom:1px solid var(--cream);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + fmtLoc(a.location)}</div>
+                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
+                </div>
+                ${a.type === 'online' && a.meet_link ? `
+                  <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet beitreten</a>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${isEmpty ? `
+          <div class="empty-state" style="padding:20px">
+            <span class="empty-state-icon" style="font-size:1.5rem">📅</span>
+            <p>Noch keine Termine. Tippe auf "+ Termin anfragen".</p>
+          </div>
+        ` : '<div style="height:4px"></div>'}
+      </div>
+    `
+  }
+
+  function openNewAppointmentModal() {
+    const today = localDate()
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Termin anfragen</h3>
+          <button id="na-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Wunschdatum
+            <input id="na-date" type="date" min="${today}" value="${today}" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Wunschuhrzeit (optional)
+            <input id="na-time" type="time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Notiz (optional)
+            <textarea id="na-note" rows="2" placeholder="Thema, Anliegen..." style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;resize:none;font-family:inherit"></textarea>
+          </label>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="na-save" class="btn btn-accent" style="width:100%;justify-content:center">Anfrage senden</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+    overlay.querySelector('#na-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+    overlay.querySelector('#na-save').addEventListener('click', async () => {
+      const date = overlay.querySelector('#na-date').value
+      const time = overlay.querySelector('#na-time').value || null
+      const note = overlay.querySelector('#na-note').value.trim() || null
+      if (!date) { alert('Bitte wähle ein Datum.'); return }
+      const btn = overlay.querySelector('#na-save')
+      btn.disabled = true; btn.textContent = 'Senden...'
+      const { error } = await supabase.from('manager_appointments').insert({
+        employee_id:    user.id,
+        scheduled_date: date,
+        scheduled_time: time,
+        note,
+        status:         'pending_manager',
+        initiated_by:   'employee',
+        type:           'offline',
+      })
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = 'Anfrage senden'
+        return
+      }
+      showToast('Terminanfrage gesendet!')
+      overlay.remove()
+      await loadData()
+      rerender()
+    })
   }
 
   function buildHTML() {
@@ -253,6 +398,8 @@ export function EmployeeView({ user, onNavigate }) {
         ${buildSkillCards()}
       </div>
 
+      ${buildAppointmentsSection()}
+
       ${evaluations.length > 1 ? `
         <div class="card">
           <div class="card-header"><h4>Bewertungsverlauf</h4></div>
@@ -309,6 +456,29 @@ export function EmployeeView({ user, onNavigate }) {
       rerender()
     })
 
+    container.querySelector('#btn-new-appt')?.addEventListener('click', openNewAppointmentModal)
+
+    container.querySelectorAll('.btn-confirm-appt[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { error } = await supabase.from('manager_appointments')
+          .update({ status: 'confirmed' }).eq('id', btn.dataset.id)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+        showToast('Termin bestätigt!')
+        await loadData(); rerender()
+      })
+    })
+
+    container.querySelectorAll('.btn-decline-appt[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Einladung ablehnen?')) return
+        const { error } = await supabase.from('manager_appointments')
+          .update({ status: 'cancelled' }).eq('id', btn.dataset.id)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+        showToast('Einladung abgelehnt.')
+        await loadData(); rerender()
+      })
+    })
+
     setTimeout(() => {
       const level = user.profile?.level || 'junior'
       // Prefer manager-scored entries for the chart; fall back to all entries so the
@@ -352,4 +522,14 @@ function localDate() {
 
 function fmtEur(n) {
   return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+}
+
+function showToast(message, type = 'success') {
+  let c = document.querySelector('.toast-container')
+  if (!c) { c = document.createElement('div'); c.className = 'toast-container'; document.body.appendChild(c) }
+  const t = document.createElement('div')
+  t.className = `toast ${type}`
+  t.textContent = message
+  c.appendChild(t)
+  setTimeout(() => t.remove(), 3500)
 }
