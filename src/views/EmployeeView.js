@@ -2,10 +2,9 @@ import { supabase } from '../lib/supabase.js'
 import { LineChart } from '../components/LineChart.js'
 import { getCriteriaForLevel, SCORE_LABELS } from '../lib/criteria.js'
 import {
-  formatScore, getTrend, getTrendHTML, getScoreLabel,
-  calcQualityRate, getLowScoringCriteria, calcWeightedScore,
+  formatScore, getScoreLabel, calcWeightedScore,
 } from '../lib/scoring.js'
-import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringEngine.js'
+import { calculatePerformance, mapEntryToEngine } from '../lib/scoringEngine.js'
 import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 import { ScoreModal } from '../components/ScoreModal.js'
 
@@ -16,20 +15,14 @@ export function EmployeeView({ user, onNavigate }) {
   let sops = []
   let hoursData    = []   // employee_daily_hours rows for current month
   let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
-  let todayLogs               = []   // daily_revenue_logs for today (read-only display)
-  let thirtyDayStats          = { customers: 0, tips: 0 }
   let employeeSkillsWithNames = []   // employee_skills JOIN skills — avoids UUID labels
   let selectedSOPId = null
   let container = null
 
   async function loadData() {
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
-    const dayStart   = new Date(); dayStart.setHours(0, 0, 0, 0)
-    const dayEnd     = new Date(); dayEnd.setHours(23, 59, 59, 999)
 
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    const [evalRes, sopRes, hoursRes, analyticsRes, todayLogsRes, thirtyDayRes, empSkillsRes] = await Promise.all([
+    const [evalRes, sopRes, hoursRes, analyticsRes, empSkillsRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
@@ -40,17 +33,6 @@ export function EmployeeView({ user, onNavigate }) {
         .select('net_hours_month, target_hours_current_month')
         .eq('employee_id', user.id)
         .maybeSingle(),
-      supabase.from('daily_revenue_logs')
-        .select('revenue, tip, payment_method, payment_method_2, amount_method_1, amount_method_2, is_no_show, is_cancelled')
-        .eq('employee_id', user.id)
-        .eq('is_cancelled', false)
-        .gte('created_at', dayStart.toISOString())
-        .lte('created_at', dayEnd.toISOString()),
-      supabase.from('daily_revenue_logs')
-        .select('tip, is_no_show')
-        .eq('employee_id', user.id)
-        .eq('is_cancelled', false)
-        .gte('created_at', thirtyDaysAgo.toISOString()),
       supabase.from('employee_skills')
         .select('skill_id, skills(id, name, label, color, category)')
         .eq('employee_id', user.id),
@@ -62,12 +44,6 @@ export function EmployeeView({ user, onNavigate }) {
     sops         = sopRes.data ?? []
     hoursData    = hoursRes.data ?? []
     analyticsRow = analyticsRes.data ?? null
-    todayLogs    = todayLogsRes.data ?? []
-    const thirtyDayData = thirtyDayRes.data ?? []
-    thirtyDayStats = {
-      customers: thirtyDayData.filter(l => !l.is_no_show).length,
-      tips:      thirtyDayData.reduce((s, l) => s + Number(l.tip ?? 0), 0),
-    }
     employeeSkillsWithNames = (empSkillsRes.data ?? []).map(row => ({
       id:       row.skill_id,
       label:    row.skills?.name || row.skills?.label || String(row.skill_id),
@@ -167,88 +143,6 @@ export function EmployeeView({ user, onNavigate }) {
     `
   }
 
-  function buildTodayCard() {
-    const badges = []
-    if (thirtyDayStats.customers > 40) badges.push({
-      label: 'Power Performer', icon: '⚡',
-      desc:  `${thirtyDayStats.customers} Kunden in 30 Tagen`,
-      bg: 'rgba(61,43,53,0.08)', border: 'rgba(61,43,53,0.2)', color: 'var(--aubergine)',
-    })
-    if (thirtyDayStats.tips > 50) badges.push({
-      label: 'Kunden-Liebling', icon: '★',
-      desc:  `${fmtEur(thirtyDayStats.tips)} Trinkgeld in 30 Tagen`,
-      bg: 'rgba(212,175,55,0.1)', border: 'rgba(212,175,55,0.25)', color: 'var(--gold)',
-    })
-
-    const active = todayLogs.filter(l => !l.is_no_show)
-
-    const byPay = {}
-    active.forEach(l => {
-      const pm = l.payment_method ?? 'bar'
-      if (l.payment_method_2) {
-        byPay[pm]                 = (byPay[pm]                 ?? 0) + Number(l.amount_method_1 ?? 0)
-        byPay[l.payment_method_2] = (byPay[l.payment_method_2] ?? 0) + Number(l.amount_method_2 ?? 0)
-      } else {
-        byPay[pm] = (byPay[pm] ?? 0) + Number(l.revenue ?? 0)
-      }
-    })
-
-    const totalRev = active.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
-    const totalTip = todayLogs.reduce((s, l) => s + Number(l.tip ?? 0), 0)
-
-    const today    = localDate()
-    const todayH   = hoursData.find(h => h.date === today)
-    const netMins  = todayH ? Math.max(0, todayH.hours_worked * 60 - todayH.break_minutes) : null
-    const netHours = netMins !== null ? (netMins / 60) : null
-
-    const PAY_LABELS = { bar: 'Bar', ec: 'EC', paypal: 'PayPal', online: 'Online', gutschein: 'Gutschein' }
-    const breakdown  = Object.entries(byPay)
-      .filter(([, v]) => v > 0)
-      .map(([k, v]) => `${PAY_LABELS[k] ?? k}: ${fmtEur(v)}`)
-      .join(' · ')
-
-    return `
-      <div class="card" style="margin-bottom:24px">
-        <div class="card-header">
-          <h4>Dein Tag heute</h4>
-          <span style="font-size:0.72rem;color:var(--text-light)">Abgleich für den Tagesabschluss</span>
-        </div>
-        <div style="padding:0 20px 4px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--cream-dark)">
-            <span style="font-size:0.875rem;color:var(--text-mid)">Umsatz heute</span>
-            <div style="text-align:right">
-              <div style="font-weight:700;font-size:1.05rem;color:var(--aubergine)">${fmtEur(totalRev)}</div>
-              ${breakdown ? `<div style="font-size:0.72rem;color:var(--text-light);margin-top:3px">${breakdown}</div>` : ''}
-            </div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--cream-dark)">
-            <span style="font-size:0.875rem;color:var(--text-mid)">Trinkgeld heute</span>
-            <span style="font-weight:700;color:var(--gold)">${fmtEur(totalTip)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 16px">
-            <span style="font-size:0.875rem;color:var(--text-mid)">Arbeitszeit heute</span>
-            <span style="font-weight:700;color:var(--aubergine)">
-              ${netHours !== null ? netHours.toFixed(1) + ' Std. (Netto)' : '–'}
-            </span>
-          </div>
-        </div>
-        ${badges.length ? `
-          <div style="padding:0 20px 16px;display:flex;gap:8px;flex-wrap:wrap">
-            ${badges.map(b => `
-              <div style="display:flex;align-items:center;gap:8px;background:${b.bg};border:1px solid ${b.border};border-radius:20px;padding:7px 14px">
-                <span style="font-size:0.9rem">${b.icon}</span>
-                <div>
-                  <div style="font-size:0.78rem;font-weight:700;color:${b.color}">${b.label}</div>
-                  <div style="font-size:0.65rem;color:var(--text-light)">${b.desc}</div>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `
-  }
-
   function buildHTML() {
     if (selectedSOPId) {
       const sop = sops.find(s => s.id === selectedSOPId)
@@ -256,16 +150,7 @@ export function EmployeeView({ user, onNavigate }) {
     }
 
     const latest      = getLatest()
-    const trend       = getTrend(evaluations)
-    const qualityRate = calcQualityRate(evaluations)
     const level       = user.profile?.level || 'junior'
-
-    // Use any available entry for PI (manager-scored preferred, self-assessment as fallback)
-    const latestForPI = latest ?? latestEntry
-    const engineInput = latestForPI ? mapEntryToEngine(latestForPI, level, user.profile) : null
-    const piResult    = engineInput ? calculatePerformance(engineInput) : null
-    const qpi        = calcQPI(evaluations, level)
-    const bonusStufe = piResult?.bonusStufe ?? null
 
     const mgrScores0    = latest?.manager_scores ?? {}
     const selfScores0   = latest?.self_scores ?? null
@@ -277,41 +162,22 @@ export function EmployeeView({ user, onNavigate }) {
         })()
       : null
 
-    const avgOf   = s => { if (!s) return null; const v = Object.values(s).filter(x => x > 0); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null }
-    const mgAvg   = avgOf(Object.keys(mgrScores0).length ? mgrScores0 : null)
-    const selfAvg = avgOf(selfScores0)
-
-    const bonusBadgeColor = {
-      Gold:         'var(--gold)',
-      Silber:       '#A0A0A0',
-      Bronze:       'var(--terracotta)',
-      'Kein Bonus': 'var(--text-light)',
-    }
-
     const selfDate = latestEntry?.self_assessed_at
       ? new Date(latestEntry.self_assessed_at).toLocaleDateString('de-DE')
       : null
 
-    // Working-hours stats
-    const weekStart = (() => {
-      const d = new Date(); const day = d.getDay() || 7
-      d.setDate(d.getDate() - day + 1); return d.toISOString().slice(0, 10)
-    })()
-    const netMinsWeek  = hoursData
-      .filter(h => h.date >= weekStart)
-      .reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
-    const netMinsMonth = hoursData
-      .reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
-
-    // Soll-Ist barometer (use analytics view when available, fall back to computed)
-    const netHoursMonth  = Number(analyticsRow?.net_hours_month  ?? (netMinsMonth / 60)) || 0
-    const targetHours    = Number(analyticsRow?.target_hours_current_month ?? 160)       || 160
-    const pct            = Math.round((netHoursMonth / targetHours) * 100)
-    const barPct         = Math.min(pct, 100)
-    const barColor       = pct >= 100 ? '#27AE60' : pct >= 60 ? 'var(--gold)' : 'var(--aubergine)'
-    const balanceH       = netHoursMonth - targetHours
-    const balanceStr     = (balanceH >= 0 ? '+' : '') + balanceH.toFixed(1) + ' Std.'
-    const balanceColor   = balanceH >= 0 ? '#27AE60' : 'var(--terracotta)'
+    const netMinsMonth  = hoursData.reduce((s, h) => s + Math.max(0, h.hours_worked * 60 - h.break_minutes), 0)
+    const netHoursMonth = Number(analyticsRow?.net_hours_month  ?? (netMinsMonth / 60)) || 0
+    const targetHours   = Number(analyticsRow?.target_hours_current_month ?? 160)       || 160
+    const pct           = Math.round((netHoursMonth / targetHours) * 100)
+    const barPct        = Math.min(pct, 100)
+    const barColor      = pct >= 100 ? '#27AE60' : pct >= 60 ? 'var(--gold)' : 'var(--aubergine)'
+    const balanceH      = netHoursMonth - targetHours
+    const balanceStr    = (balanceH >= 0 ? '+' : '') + balanceH.toFixed(1) + ' Std.'
+    const balanceColor  = balanceH >= 0 ? '#27AE60' : 'var(--terracotta)'
+    const scoreColor    = combinedScore !== null
+      ? (combinedScore >= 4 ? '#27AE60' : combinedScore >= 3 ? 'var(--gold)' : 'var(--terracotta)')
+      : 'var(--text-light)'
 
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -330,55 +196,25 @@ export function EmployeeView({ user, onNavigate }) {
         </div>
       </div>
 
-      ${buildTodayCard()}
+      <!-- Aktueller Score -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Aktueller Score</div>
+            <div style="font-size:2.2rem;font-weight:700;color:${scoreColor};line-height:1">${combinedScore !== null ? formatScore(combinedScore) : '–'}</div>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:5px">von 5.0${selfScores0 ? ' · 75/25 Manager/Selbst' : ''}</div>
+          </div>
+          <div style="width:60px;height:60px;border-radius:50%;border:3px solid ${scoreColor};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="font-size:1rem;font-weight:700;color:${scoreColor}">${combinedScore !== null ? formatScore(combinedScore) : '–'}</span>
+          </div>
+        </div>
+      </div>
 
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-label">Aktueller Score</div>
-          <div class="stat-value">${combinedScore !== null ? formatScore(combinedScore) : '–'}</div>
-          <div class="stat-sub">von 5.0${selfScores0 ? ' · 75/25' : ''}</div>
-        </div>
-        <div class="stat-card" style="${piResult?.vetoAusgeloest ? 'border-left:3px solid var(--terracotta)' : ''}">
-          <div class="stat-label">Performance Index</div>
-          <div class="stat-value" style="color:${piResult?.vetoAusgeloest ? 'var(--terracotta)' : 'var(--aubergine)'}">
-            ${piResult?.vetoAusgeloest
-              ? '<strong>0 <span style="font-size:0.75rem">(VETO)</span></strong>'
-              : piResult != null
-                ? String(piResult.PI_Monat)
-                : 'Keine Daten'
-            }
-          </div>
-          <div class="stat-sub">von 100 · ${piResult?.vetoAusgeloest ? '⚠ Sicherheitsveto' : piResult != null ? 'aktueller Monat' : 'Bewertung ausstehend'}</div>
-          ${piResult?.vetoAusgeloest && piResult.vetoCauses?.length ? `
-            <div style="font-size:0.62rem;color:var(--terracotta);margin-top:4px;line-height:1.5">
-              ${piResult.vetoCauses.map(c => `⚠ ${c}`).join('<br>')}
-            </div>
-          ` : ''}
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Quartal QPI</div>
-          <div class="stat-value" style="color:var(--aubergine)">
-            ${qpi !== null ? qpi : '–'}
-          </div>
-          <div class="stat-sub">${qpi === null ? 'mind. 3 Bewertungen nötig' : 'Ø letzte 3 Monate'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Bonusstufe</div>
-          <div class="stat-value" style="font-size:1.4rem;color:${bonusBadgeColor[bonusStufe] ?? 'var(--text-light)'}">
-            ${bonusStufe ?? '–'}
-          </div>
-          <div class="stat-sub">${qpi !== null ? 'QPI ' + qpi : 'QPI noch nicht berechenbar'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Woche (Netto)</div>
-          <div class="stat-value" style="font-size:1.3rem;color:var(--aubergine)">
-            ${netMinsWeek > 0 ? (netMinsWeek / 60).toFixed(1) : '–'}
-          </div>
-          <div class="stat-sub">${netMinsWeek > 0 ? 'Std. ab Mo.' : 'Noch keine Zeiterfassung'}</div>
-        </div>
-        <div class="stat-card" style="grid-column:span 2">
+      <!-- Stunden-Konto Monat -->
+      <div class="card" style="margin-bottom:24px">
+        <div style="padding:16px 20px">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-            <div class="stat-label" style="margin:0">Diesen Monat</div>
+            <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-light)">Stunden-Konto · Monat</div>
             <span style="font-size:0.78rem;font-weight:700;color:${balanceColor}">${netHoursMonth > 0 ? balanceStr : '–'}</span>
           </div>
           <div style="font-size:1.25rem;font-weight:700;color:var(--aubergine);margin-bottom:10px">
@@ -396,23 +232,12 @@ export function EmployeeView({ user, onNavigate }) {
         </div>
       </div>
 
-      <details open style="margin-bottom:16px">
-        <summary style="font-size:0.72rem;font-weight:600;color:var(--text-light);cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;padding:2px 0">
-          ◉ Debug · Berechnungsdetails
-        </summary>
-        <div style="font-size:0.72rem;background:rgba(61,43,53,0.05);border-radius:var(--radius-sm);padding:10px 14px;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px 20px;line-height:2;font-family:monospace">
-          <span>Manager-Schnitt:&nbsp;<strong>${mgAvg ?? '–'}&thinsp;/5</strong></span>
-          <span>Mitarbeiter-Schnitt:&nbsp;<strong>${selfAvg ?? '–'}&thinsp;/5</strong></span>
-          <span>Veto aktiv:&nbsp;<strong style="color:${piResult?.vetoAusgeloest ? 'var(--terracotta)' : '#6B8F71'}">${piResult?.vetoAusgeloest ? 'JA ⚠' : piResult ? 'Nein ✓' : '–'}</strong></span>
-          ${piResult?.vetoCauses?.length ? `<span style="color:var(--terracotta)">Durch:&nbsp;${piResult.vetoCauses.join(' · ')}</span>` : ''}
-          <span>Berechneter PI:&nbsp;<strong style="color:var(--aubergine)">${piResult ? piResult.PI_Monat : 'null'}</strong></span>
-          <span style="color:var(--text-light)">Szenario:&nbsp;<strong>${!piResult ? 'C – keine Daten' : piResult.vetoAusgeloest ? 'A – Veto' : piResult.PI_Monat === 0 ? 'B – Formel?' : '✓ OK'}</strong></span>
-        </div>
-      </details>
-
+      <!-- Score-Verlauf (kompakt) -->
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Score-Verlauf</h4></div>
-        <div class="chart-container"><canvas id="employee-chart"></canvas></div>
+        <div style="position:relative;height:110px;padding:8px 16px 12px">
+          <canvas id="employee-chart"></canvas>
+        </div>
       </div>
 
       ${latestEntry
