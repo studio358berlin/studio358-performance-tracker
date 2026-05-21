@@ -202,6 +202,11 @@ export function TeamManagement({ user }) {
           <button id="sk-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
         </div>
         <div style="flex:1;overflow-y:auto;padding:16px 20px">
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <input id="sk-new-name" type="text" placeholder="Neuer Skill-Name"
+              style="flex:1;padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.88rem;background:var(--white);color:var(--aubergine);outline:none">
+            <button id="sk-create" class="btn btn-accent btn-sm" style="white-space:nowrap">+ Skill erstellen</button>
+          </div>
           <p style="font-size:0.8rem;color:var(--text-mid);margin-bottom:14px">Tippe auf einen Skill um ihn zu aktivieren oder zu deaktivieren.</p>
           <div id="skill-modal-grid" style="display:flex;flex-wrap:wrap;gap:8px">
             ${skillsToShow.map(skill => {
@@ -224,6 +229,41 @@ export function TeamManagement({ user }) {
     document.body.appendChild(overlay)
 
     const grid = overlay.querySelector('#skill-modal-grid')
+
+    overlay.querySelector('#sk-create')?.addEventListener('click', async () => {
+      const input     = overlay.querySelector('#sk-new-name')
+      const name      = input?.value?.trim()
+      if (!name) return
+      const createBtn = overlay.querySelector('#sk-create')
+      createBtn.disabled = true; createBtn.textContent = '…'
+      const { data: newSkill, error } = await supabase
+        .from('skills').insert({ name }).select().single()
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        createBtn.disabled = false; createBtn.textContent = '+ Skill erstellen'
+        return
+      }
+      const skill = { id: newSkill.id, label: newSkill.name || name, color: newSkill.color || '#A08090' }
+      availableSkills.push(skill)
+      const btn = document.createElement('button')
+      btn.type = 'button'; btn.className = 'skill-modal-btn'
+      btn.dataset.skill = skill.id; btn.dataset.active = 'false'
+      btn.style.cssText = 'padding:6px 14px;border-radius:20px;border:2px solid var(--cream-dark);background:var(--white);color:var(--text-mid);font-size:0.8rem;font-weight:400;cursor:pointer;transition:all 0.15s'
+      btn.textContent = skill.label
+      btn.addEventListener('click', () => {
+        const active = btn.dataset.active !== 'true'
+        btn.dataset.active    = String(active)
+        btn.style.borderColor = active ? (skill.color || 'var(--aubergine)') : 'var(--cream-dark)'
+        btn.style.background  = active ? (skill.color || 'var(--aubergine)') : 'var(--white)'
+        btn.style.color       = active ? '#fff' : 'var(--text-mid)'
+        btn.style.fontWeight  = active ? '600' : '400'
+        btn.textContent       = skill.label + (active ? ' ✓' : '')
+      })
+      grid.appendChild(btn)
+      input.value = ''
+      showToast(`Skill "${name}" erstellt!`, 'success')
+      createBtn.disabled = false; createBtn.textContent = '+ Skill erstellen'
+    })
 
     grid.querySelectorAll('.skill-modal-btn').forEach(btn => {
       btn.addEventListener('click', () => {

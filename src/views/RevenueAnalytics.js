@@ -16,11 +16,6 @@ export function RevenueAnalytics({ user }) {
   let dateTo        = localStorage.getItem('analyticsTo')     || localDate()
   let container     = null
 
-  // Performance matrix state
-  const _now   = new Date()
-  let perfYear  = _now.getFullYear()
-  let perfMonth = _now.getMonth() + 1
-  let perfData        = []   // rows from get_employee_performance RPC
   let topServicesData = []   // rows from get_top_services_analysis RPC
   let hoursData       = []   // rows from employee_daily_hours
 
@@ -50,7 +45,7 @@ export function RevenueAnalytics({ user }) {
 
     // null → 'all' for managers without an assigned location
     if (!selectedLocationId) selectedLocationId = 'all'
-    await Promise.all([loadLogs(), loadTarget(), loadHours(), loadPerfData(), loadTopServices()])
+    await Promise.all([loadLogs(), loadTarget(), loadHours(), loadTopServices()])
   }
 
   async function loadLogs() {
@@ -70,19 +65,11 @@ export function RevenueAnalytics({ user }) {
     logs = data ?? []
   }
 
-  async function loadPerfData() {
-    const { data, error } = await supabase.rpc('get_employee_performance', {
-      target_year:  perfYear,
-      target_month: perfMonth,
-    })
-    if (error) console.error('[RevenueAnalytics] get_employee_performance:', error.message)
-    perfData = data ?? []
-  }
-
   async function loadTopServices() {
+    const d = new Date(dateFrom + 'T12:00:00')
     const { data, error } = await supabase.rpc('get_top_services_analysis', {
-      target_year:  perfYear,
-      target_month: perfMonth,
+      target_year:  d.getFullYear(),
+      target_month: d.getMonth() + 1,
     })
     if (error) console.error('[RevenueAnalytics] get_top_services_analysis:', error.message)
     topServicesData = data ?? []
@@ -345,44 +332,30 @@ export function RevenueAnalytics({ user }) {
     return locations.find(l => l.id === id)?.name ?? '–'
   }
 
-  // ── Performance Matrix ────────────────────────────────────────────────────
+  // ── Mitarbeiter-Umsatz (live, aus dateFrom/dateTo) ───────────────────────
 
-  function buildPerformanceMatrix() {
-    const MONTHS = ['Januar','Februar','März','April','Mai','Juni',
-                    'Juli','August','September','Oktober','November','Dezember']
-    const curYear = new Date().getFullYear()
-    const years   = [curYear, curYear - 1, curYear - 2]
-
-    // Frontend location filter + sort by revenue descending
-    let rows = perfData.filter(r => r != null)
-    if (selectedLocationId && selectedLocationId !== 'all') {
-      rows = rows.filter(r => {
-        const prof = profiles.find(p => p.id === (r.employee_id ?? r.id))
-        return prof?.location_id === selectedLocationId || r.location_id === selectedLocationId
-      })
-    }
-    rows.sort((a, b) => Number(b.total_revenue ?? b.revenue ?? 0) - Number(a.total_revenue ?? a.revenue ?? 0))
-
-    const monthLabel = `${MONTHS[(perfMonth ?? 1) - 1]} ${perfYear}`
+  function buildEmployeeRevenueTable() {
+    const { label } = dateRange()
+    const source = filteredLogs().filter(l => !l.is_no_show)
+    const byEmp  = {}
+    source.forEach(l => {
+      if (!byEmp[l.employee_id]) byEmp[l.employee_id] = { revenue: 0, tips: 0, count: 0 }
+      byEmp[l.employee_id].revenue += Number(l.revenue)
+      byEmp[l.employee_id].tips    += Number(l.tip)
+      byEmp[l.employee_id].count++
+    })
+    const rows = Object.entries(byEmp).sort((a, b) => b[1].revenue - a[1].revenue)
 
     return `
       <div class="card" style="margin-bottom:24px">
-        <div class="card-header" style="flex-wrap:wrap;gap:8px">
-          <h4>Mitarbeiter-Umsatz & Performance Matrix</h4>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="perf-month" style="padding:5px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;background:var(--white)">
-              ${MONTHS.map((m, i) => `<option value="${i+1}" ${perfMonth === i+1 ? 'selected' : ''}>${m}</option>`).join('')}
-            </select>
-            <select id="perf-year" style="padding:5px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;background:var(--white)">
-              ${years.map(y => `<option value="${y}" ${perfYear === y ? 'selected' : ''}>${y}</option>`).join('')}
-            </select>
-          </div>
+        <div class="card-header">
+          <h4>Mitarbeiter-Umsatz</h4>
+          <span style="font-size:0.75rem;color:var(--text-light)">${label}</span>
         </div>
-
         ${!rows.length ? `
           <div class="empty-state" style="padding:32px 20px">
             <span class="empty-state-icon">◉</span>
-            <p>Keine Performance-Daten für ${monthLabel}.</p>
+            <p>Keine Umsatzdaten im gewählten Zeitraum.</p>
           </div>
         ` : `
           <div class="table-wrapper">
@@ -390,37 +363,22 @@ export function RevenueAnalytics({ user }) {
               <thead>
                 <tr>
                   <th>Mitarbeiter</th>
-                  <th>Arbeitszeit (Ist / Soll)</th>
-                  <th>Konto (+/−)</th>
-                  <th style="text-align:right">Umsatz Gesamt</th>
-                  <th style="text-align:right">Trinkgeld</th>
                   <th style="text-align:center">Behandlungen</th>
-                  <th style="text-align:right">Schnitt Ø</th>
+                  <th style="text-align:right">Umsatz</th>
+                  <th style="text-align:right">Ø pro Kunde</th>
+                  <th style="text-align:right">Trinkgeld</th>
                 </tr>
               </thead>
               <tbody>
-                ${rows.map(r => {
-                  const worked  = Number(r.hours_worked    ?? r.net_hours_month ?? 0)
-                  const target  = Number(r.target_hours    ?? 160) || 160
-                  const revenue = Number(r.total_revenue   ?? r.revenue ?? 0)
-                  const tips    = Number(r.total_tips      ?? r.tips    ?? 0)
-                  const count   = Number(r.treatment_count ?? r.treatments ?? 0)
-                  const name    = r.full_name ?? r.name ?? '–'
-
-                  const balance  = worked - target
-                  const balStr   = (balance >= 0 ? '+' : '') + balance.toFixed(1) + ' Std.'
-                  const balColor = balance >= 0 ? '#27AE60' : 'var(--terracotta)'
-                  const avg      = count > 0 ? revenue / count : 0
-
+                ${rows.map(([id, v]) => {
+                  const avg = v.count > 0 ? v.revenue / v.count : 0
                   return `
                     <tr>
-                      <td style="font-weight:600;color:var(--aubergine)">${name}</td>
-                      <td style="color:var(--text-mid)">${worked.toFixed(1)} / ${target} Std.</td>
-                      <td style="font-weight:700;color:${balColor}">${worked > 0 || balance < 0 ? balStr : '–'}</td>
-                      <td style="text-align:right;font-weight:600;color:var(--aubergine)">${fmt(revenue)}</td>
-                      <td style="text-align:right;color:var(--gold)">${tips > 0 ? fmt(tips) : '–'}</td>
-                      <td style="text-align:center">${count > 0 ? count : '–'}</td>
-                      <td style="text-align:right;color:var(--text-mid)">${count > 0 ? fmt(avg) : '–'}</td>
+                      <td style="font-weight:600;color:var(--aubergine)">${empName(id)}</td>
+                      <td style="text-align:center">${v.count}</td>
+                      <td style="text-align:right;font-weight:600;color:var(--aubergine)">${fmt(v.revenue)}</td>
+                      <td style="text-align:right;color:var(--text-mid)">${fmt(avg)}</td>
+                      <td style="text-align:right;color:var(--gold)">${v.tips > 0 ? fmt(v.tips) : '–'}</td>
                     </tr>
                   `
                 }).join('')}
@@ -627,29 +585,33 @@ export function RevenueAnalytics({ user }) {
         <button class="btn btn-sm btn-accent" id="export-csv-btn">↓ Umsatz Export (.CSV)</button>
       </div>
 
-      <!-- Filter bar -->
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:24px">
-        <div class="location-tabs" style="margin:0">
-          <button class="location-tab ${period==='today' ? 'active':''}" data-period="today">Heute</button>
-          <button class="location-tab ${period==='week'  ? 'active':''}" data-period="week">Woche</button>
-          <button class="location-tab ${period==='month' ? 'active':''}" data-period="month">Monat</button>
+      <!-- Filter bar: Row 1 = Tabs + Von/Bis, Row 2 = Standort + Mitarbeiter -->
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+          <div class="location-tabs" style="margin:0">
+            <button class="location-tab ${period==='today' ? 'active':''}" data-period="today">Heute</button>
+            <button class="location-tab ${period==='week'  ? 'active':''}" data-period="week">Woche</button>
+            <button class="location-tab ${period==='month' ? 'active':''}" data-period="month">Monat</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
+            <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
+            <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+          </label>
         </div>
-        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
-          <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
-            style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
-          <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
-            style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-        </label>
-        <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
-          <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
-          ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
-        </select>
-        <select id="analytics-employee" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
-          <option value="">Alle Mitarbeiter</option>
-          ${profiles.map(p => `<option value="${p.id}" ${p.id===selectedEmployeeId?'selected':''}>${p.full_name}</option>`).join('')}
-        </select>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+          <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
+            <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
+            ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
+          </select>
+          <select id="analytics-employee" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
+            <option value="">Alle Mitarbeiter</option>
+            ${profiles.map(p => `<option value="${p.id}" ${p.id===selectedEmployeeId?'selected':''}>${p.full_name}</option>`).join('')}
+          </select>
+        </div>
       </div>
 
       <!-- Gauge + KPI tiles -->
@@ -691,27 +653,27 @@ export function RevenueAnalytics({ user }) {
         </div>
       </div>
 
-      <!-- Top-Performer -->
+      <!-- Reihe 1: Umsatzkönig + Service-König -->
       ${buildTopPerformer(k.byEmployee)}
 
-      <!-- Top Services -->
+      <!-- Reihe 2: Top Services -->
       <div class="card" style="margin-bottom:24px">
-        <div class="card-header"><h4>Top Services</h4><span style="font-size:0.75rem;color:var(--text-light)">${new Date(perfYear, perfMonth - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</span></div>
+        <div class="card-header"><h4>Top Services</h4><span style="font-size:0.75rem;color:var(--text-light)">${(() => { const d = new Date(dateFrom + 'T12:00:00'); return d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) })()}</span></div>
         <div style="padding:0 0 4px">
           ${buildTopServicesChart()}
         </div>
       </div>
 
-      <!-- Trinkgeld-Zusammenfassung -->
+      <!-- Reihe 3: Mitarbeiter-Umsatz (live) -->
+      ${buildEmployeeRevenueTable()}
+
+      <!-- Reihe 4: Trinkgeld-Übersicht -->
       <div class="card" style="margin-bottom:24px">
         <div class="card-header"><h4>Trinkgeld-Übersicht</h4><span style="font-size:0.75rem;color:var(--text-light)">${label}</span></div>
         <div style="padding:0 0 4px">
           ${buildTipSummary()}
         </div>
       </div>
-
-      <!-- Mitarbeiter-Performance-Matrix -->
-      ${buildPerformanceMatrix()}
     `
   }
 
@@ -773,18 +735,6 @@ export function RevenueAnalytics({ user }) {
       selectedEmployeeId = e.target.value || null
       rerender()
     })
-
-    // Performance matrix: month/year selectors — reload RPC data, no full loadLogs()
-    const onPerfChange = async () => {
-      const mEl = container.querySelector('#perf-month')
-      const yEl = container.querySelector('#perf-year')
-      if (mEl) perfMonth = parseInt(mEl.value, 10)
-      if (yEl) perfYear  = parseInt(yEl.value, 10)
-      await Promise.all([loadPerfData(), loadTopServices()])
-      rerender()
-    }
-    container.querySelector('#perf-month')?.addEventListener('change', onPerfChange)
-    container.querySelector('#perf-year')?.addEventListener('change',  onPerfChange)
 
   }
 

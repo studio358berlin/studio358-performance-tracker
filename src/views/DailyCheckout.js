@@ -1011,38 +1011,33 @@ export function DailyCheckout({ user, onNavigate }) {
       ${!isManager ? buildHoursBanner() : ''}
 
       ${isManager ? `
-        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
-          <div class="location-tabs" style="margin:0">
-            <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
-            <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
-            <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
+        <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+            <div class="location-tabs" style="margin:0">
+              <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
+              <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
+              <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
+              <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+                style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
+              <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+                style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+            </label>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
-            <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
-              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
-            <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
-              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-          </label>
-          <select id="location-select" style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-            <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
-            ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
-          </select>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+            <select id="location-select" style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+              <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
+              ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
+            </select>
+          </div>
         </div>
       ` : `
-        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
-          <div class="location-tabs" style="margin:0">
-            <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
-            <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
-            <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
-          </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
-            <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
-              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
-            <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Datum wählen:
+            <input type="date" id="employee-date-picker" value="${dateFrom}" max="${localDate()}"
               style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
           </label>
         </div>
@@ -1052,19 +1047,19 @@ export function DailyCheckout({ user, onNavigate }) {
 
       <div class="stat-grid" style="margin-bottom:24px">
         <div class="stat-card">
-          <div class="stat-label">Einträge ${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'heute'}</div>
+          <div class="stat-label">${isManager ? `Einträge ${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'heute'}` : 'Einträge am Tag'}</div>
           <div class="stat-value">${summary.total}</div>
           <div class="stat-sub">${summary.noShows} No-Show${summary.noShows !== 1 ? 's' : ''}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Umsatz ${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'heute'}</div>
+          <div class="stat-label">${isManager ? `Umsatz ${period === 'week' ? 'Woche' : period === 'month' ? 'Monat' : 'heute'}` : 'Umsatz am Tag'}</div>
           <div class="stat-value" style="color:var(--aubergine)">${fmt(summary.revenue)}</div>
           <div class="stat-sub">ohne No-Shows & Stornos</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Trinkgeld</div>
           <div class="stat-value" style="color:var(--gold)">${fmt(summary.tips)}</div>
-          <div class="stat-sub">gesamt ${periodLabel()}</div>
+          <div class="stat-sub">${isManager ? `gesamt ${periodLabel()}` : 'gesamt am gewählten Tag'}</div>
         </div>
       </div>
 
@@ -1107,7 +1102,7 @@ export function DailyCheckout({ user, onNavigate }) {
       ${buildMyHoursCard()}
 
       <div class="card">
-        <div class="card-header"><h4>${period === 'week' ? 'Einträge diese Woche' : period === 'month' ? 'Einträge diesen Monat' : 'Heutige Einträge'}</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
+        <div class="card-header"><h4>${isManager ? (period === 'week' ? 'Einträge diese Woche' : period === 'month' ? 'Einträge diesen Monat' : 'Heutige Einträge') : 'Einträge am Tag'}</h4><span style="font-size:0.78rem;color:var(--text-light)">${todayLogs.length} Einträge</span></div>
         ${todayLogs.length ? `
           <div class="table-wrapper" style="max-height:280px;overflow-y:auto">
             <table style="font-size:0.82rem">
@@ -1196,6 +1191,12 @@ export function DailyCheckout({ user, onNavigate }) {
     container.querySelector('#date-to')?.addEventListener('change', async e => {
       dateTo = e.target.value || localDate()
       period = ''
+      await refreshDay()
+    })
+
+    container.querySelector('#employee-date-picker')?.addEventListener('change', async e => {
+      dateFrom = dateTo = e.target.value || localDate()
+      period = 'today'
       await refreshDay()
     })
 

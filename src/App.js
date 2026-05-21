@@ -225,7 +225,7 @@ async function loadView(viewId) {
 const VIEW_NAMES = {
   checkout:          'Tagesabschluss',
   analytics:         'Umsatz-Analytics',
-  dashboard:         'Dashboard',
+  dashboard:         'Performance Tracker',
   team:              'Team',
   sops:              'Wissensdatenbank',
   'my-performance':  'Meine Performance',

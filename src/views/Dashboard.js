@@ -228,7 +228,7 @@ export function Dashboard({ user }) {
     const stats = getStats()
     return `
       <div class="page-header">
-        <h2>Dashboard</h2>
+        <h2>Performance Tracker</h2>
         <p style="color:var(--text-light);font-size:0.875rem">Studio 358 – Manager Übersicht</p>
       </div>
 

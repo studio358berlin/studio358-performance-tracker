@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase.js'
 import { LineChart } from '../components/LineChart.js'
 import { getCriteriaForLevel, SCORE_LABELS } from '../lib/criteria.js'
-import { getAllSkills } from '../lib/skills.js'
 import {
   formatScore, getTrend, getTrendHTML, getScoreLabel,
   calcQualityRate, getLowScoringCriteria, calcWeightedScore,
@@ -17,8 +16,9 @@ export function EmployeeView({ user, onNavigate }) {
   let sops = []
   let hoursData    = []   // employee_daily_hours rows for current month
   let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
-  let todayLogs      = []   // daily_revenue_logs for today (read-only display)
-  let thirtyDayStats = { customers: 0, tips: 0 }
+  let todayLogs               = []   // daily_revenue_logs for today (read-only display)
+  let thirtyDayStats          = { customers: 0, tips: 0 }
+  let employeeSkillsWithNames = []   // employee_skills JOIN skills — avoids UUID labels
   let selectedSOPId = null
   let container = null
 
@@ -29,7 +29,7 @@ export function EmployeeView({ user, onNavigate }) {
 
     const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-    const [evalRes, sopRes, hoursRes, analyticsRes, todayLogsRes, thirtyDayRes] = await Promise.all([
+    const [evalRes, sopRes, hoursRes, analyticsRes, todayLogsRes, thirtyDayRes, empSkillsRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
@@ -51,6 +51,9 @@ export function EmployeeView({ user, onNavigate }) {
         .eq('employee_id', user.id)
         .eq('is_cancelled', false)
         .gte('created_at', thirtyDaysAgo.toISOString()),
+      supabase.from('employee_skills')
+        .select('skill_id, skills(id, name, label, color, category)')
+        .eq('employee_id', user.id),
     ])
     const all    = evalRes.data ?? []
     allEntries   = all
@@ -65,6 +68,12 @@ export function EmployeeView({ user, onNavigate }) {
       customers: thirtyDayData.filter(l => !l.is_no_show).length,
       tips:      thirtyDayData.reduce((s, l) => s + Number(l.tip ?? 0), 0),
     }
+    employeeSkillsWithNames = (empSkillsRes.data ?? []).map(row => ({
+      id:       row.skill_id,
+      label:    row.skills?.name || row.skills?.label || String(row.skill_id),
+      color:    row.skills?.color || '#A08090',
+      category: row.skills?.category || 'custom',
+    }))
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -89,29 +98,18 @@ export function EmployeeView({ user, onNavigate }) {
   }
 
   function buildSkillCards() {
-    const empSkills   = user.profile?.skills ?? []
-    const allSkills   = getAllSkills(empSkills)
-    const lowCriteria = getLowScoringCriteria(evaluations)
-
-    const criteriaBySkill = {
-      shellac:    ['technique', 'hygiene'],
-      gel:        ['technique', 'hygiene'],
-      dual_form:  ['technique'],
-      manikuere:  ['service', 'hygiene'],
-      'pediküre': ['service', 'hygiene'],
-      ibx:        ['technique', 'learning'],
+    if (!employeeSkillsWithNames.length) {
+      return `<div style="padding:0 20px 16px;font-size:0.85rem;color:var(--text-light)">Noch keine Skills zugewiesen.</div>`
     }
-
     return `
-      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
-        ${allSkills.map(skill => {
-          const hasSkill  = empSkills.includes(skill.id)
+      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:0 20px 16px">
+        ${employeeSkillsWithNames.map(skill => {
           const linkedSop = sops.find(s => s.associated_skill === skill.id)
           return `<span
-            style="display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;cursor:${linkedSop ? 'pointer' : 'default'};background:${hasSkill ? (skill.color || 'var(--aubergine)') : 'var(--cream-dark)'};color:${hasSkill ? '#fff' : 'var(--text-mid)'};"
+            style="display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;cursor:${linkedSop ? 'pointer' : 'default'};background:${skill.color || 'var(--aubergine)'};color:#fff;"
             data-sop-id="${linkedSop?.id ?? ''}"
-            title="${hasSkill ? 'Erworben' : 'In Ausbildung'}${linkedSop ? ' · SOP ansehen' : ''}"
-          >${skill.label}${hasSkill ? ' ✓' : ''}</span>`
+            title="Erworben${linkedSop ? ' · SOP ansehen' : ''}"
+          >${skill.label} ✓</span>`
         }).join('')}
       </div>
     `
