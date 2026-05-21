@@ -15,15 +15,17 @@ export function TeamManagement({ user }) {
   let activeLocation = localStorage.getItem('activeLocation') || 'all'
   let view           = 'list'
   let selectedEmployee = null
-  let showAddForm    = false
-  let container      = null
+  let showAddForm       = false
+  let container         = null
+  let availableSkills   = []   // from public.skills table
+  let employeeSkillsMap = {}   // employee_id → skill_id[]
 
   async function loadData() {
     const now             = new Date()
     const firstOfMonth    = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
 
-    const [empRes, evalRes, logsRes, hoursRes, targetsRes] = await Promise.all([
+    const [empRes, evalRes, logsRes, hoursRes, targetsRes, skillsRes, empSkillsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
@@ -34,11 +36,31 @@ export function TeamManagement({ user }) {
         .select('employee_id, target_hours')
         .eq('year',  now.getFullYear())
         .eq('month', now.getMonth() + 1),
+      supabase.from('skills').select('*').order('name'),
+      supabase.from('employee_skills').select('employee_id, skill_id'),
     ])
     employees     = empRes.data  ?? []
     evaluations   = evalRes.data ?? []
     employeeHours = hoursRes.data   ?? []
     monthlyTargets = targetsRes.data ?? []
+
+    // Normalize skills from DB — fall back to DEFAULT_SKILLS if table is empty/missing
+    const rawSkills = skillsRes.data ?? []
+    availableSkills = rawSkills.length
+      ? rawSkills.map(s => ({
+          id:       s.id,
+          label:    s.name || s.label || String(s.id),
+          color:    s.color || '#A08090',
+          category: s.category || 'custom',
+        }))
+      : DEFAULT_SKILLS
+
+    // Build employee_id → skill_id[] lookup
+    employeeSkillsMap = {}
+    for (const row of (empSkillsRes.data ?? [])) {
+      if (!employeeSkillsMap[row.employee_id]) employeeSkillsMap[row.employee_id] = []
+      employeeSkillsMap[row.employee_id].push(row.skill_id)
+    }
 
     // Aggregate monthly tips per employee from logs
     const tipsMap = {}
@@ -125,7 +147,7 @@ export function TeamManagement({ user }) {
     }
   }
 
-  async function addEmployee(formData) {
+  async function addEmployee(formData, selectedSkills = []) {
     const tempPassword = formData.password || Math.random().toString(36).slice(-8)
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -147,18 +169,117 @@ export function TeamManagement({ user }) {
       role:      'employee',
       location:  formData.location,
       level:     formData.level || 'junior',
+      skills:    selectedSkills,
     })
     if (profileError) {
       console.error('profiles INSERT fehlgeschlagen:', profileError)
       throw profileError
     }
+
+    if (selectedSkills.length > 0) {
+      const { error: skillError } = await supabase.from('employee_skills')
+        .insert(selectedSkills.map(sid => ({ employee_id: authData.user.id, skill_id: sid })))
+      if (skillError) console.warn('employee_skills INSERT fehlgeschlagen:', skillError)
+    }
+  }
+
+  async function openSkillEditModal(empId) {
+    const emp = employees.find(e => e.id === empId)
+    if (!emp) return
+    const skillsToShow    = availableSkills.length ? availableSkills : DEFAULT_SKILLS
+    const currentSkillIds = new Set(employeeSkillsMap[empId] ?? emp.skills ?? [])
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:480px;width:100%;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0;flex-shrink:0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Skills bearbeiten</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${emp.full_name}</div>
+          </div>
+          <button id="sk-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px 20px">
+          <p style="font-size:0.8rem;color:var(--text-mid);margin-bottom:14px">Tippe auf einen Skill um ihn zu aktivieren oder zu deaktivieren.</p>
+          <div id="skill-modal-grid" style="display:flex;flex-wrap:wrap;gap:8px">
+            ${skillsToShow.map(skill => {
+              const has = currentSkillIds.has(skill.id)
+              return `<button type="button" class="skill-modal-btn" data-skill="${skill.id}" data-active="${has}"
+                style="padding:6px 14px;border-radius:20px;border:2px solid ${has ? skill.color : 'var(--cream-dark)'};
+                  background:${has ? skill.color : 'var(--white)'};color:${has ? '#fff' : 'var(--text-mid)'};
+                  font-size:0.8rem;font-weight:${has ? '600' : '400'};cursor:pointer;transition:all 0.15s">
+                ${skill.label}${has ? ' ✓' : ''}
+              </button>`
+            }).join('')}
+          </div>
+        </div>
+        <div style="padding:14px 20px;flex-shrink:0;border-top:1px solid var(--cream-dark)">
+          <button id="sk-save" class="btn btn-accent" style="width:100%;justify-content:center">Änderungen speichern</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const grid = overlay.querySelector('#skill-modal-grid')
+
+    grid.querySelectorAll('.skill-modal-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const skill  = skillsToShow.find(s => s.id === btn.dataset.skill)
+        const active = btn.dataset.active !== 'true'
+        btn.dataset.active    = active
+        btn.style.borderColor = active ? (skill?.color || 'var(--aubergine)') : 'var(--cream-dark)'
+        btn.style.background  = active ? (skill?.color || 'var(--aubergine)') : 'var(--white)'
+        btn.style.color       = active ? '#fff' : 'var(--text-mid)'
+        btn.style.fontWeight  = active ? '600' : '400'
+        btn.textContent       = (skill?.label ?? btn.dataset.skill) + (active ? ' ✓' : '')
+      })
+    })
+
+    overlay.querySelector('#sk-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#sk-save').addEventListener('click', async () => {
+      const saveBtn = overlay.querySelector('#sk-save')
+      saveBtn.disabled = true; saveBtn.textContent = 'Speichern…'
+
+      const newSkillIds = []
+      grid.querySelectorAll('.skill-modal-btn[data-active="true"]').forEach(b => newSkillIds.push(b.dataset.skill))
+
+      const { error: delErr } = await supabase.from('employee_skills').delete().eq('employee_id', empId)
+      if (delErr) {
+        showToast('Fehler: ' + delErr.message, 'error')
+        saveBtn.disabled = false; saveBtn.textContent = 'Änderungen speichern'
+        return
+      }
+
+      if (newSkillIds.length > 0) {
+        const { error: insErr } = await supabase.from('employee_skills')
+          .insert(newSkillIds.map(sid => ({ employee_id: empId, skill_id: sid })))
+        if (insErr) {
+          showToast('Fehler: ' + insErr.message, 'error')
+          saveBtn.disabled = false; saveBtn.textContent = 'Änderungen speichern'
+          return
+        }
+      }
+
+      // Keep profiles.skills in sync for backward compat
+      await supabase.from('profiles').update({ skills: newSkillIds }).eq('id', empId)
+
+      showToast('Skills aktualisiert!', 'success')
+      overlay.remove()
+      await loadData()
+      rerender()
+    })
   }
 
   // ── HTML builders ──────────────────────────────────────────────────────────
 
   function buildSkillManager(emp) {
-    const allSkills = getAllKnownSkills()
-    const empSkills = emp.skills ?? []
+    const allSkills = availableSkills.length ? availableSkills : getAllKnownSkills()
+    const empSkills = employeeSkillsMap[emp.id] ?? emp.skills ?? []
 
     return `
       <div class="card" style="margin-bottom:20px">
@@ -379,7 +500,20 @@ export function TeamManagement({ user }) {
               </select>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" id="add-submit-btn">Mitarbeiter anlegen</button>
+          <div style="margin-top:20px">
+            <label class="form-label" style="display:block;margin-bottom:10px">Zugeordnete Skills / Zertifizierungen</label>
+            <div id="new-emp-skills-grid" style="display:flex;flex-wrap:wrap;gap:8px">
+              ${(availableSkills.length ? availableSkills : DEFAULT_SKILLS).map(skill => `
+                <button type="button" class="new-emp-skill-btn" data-skill="${skill.id}" data-active="false"
+                  style="padding:6px 14px;border-radius:20px;border:2px solid var(--cream-dark);background:var(--white);
+                    color:var(--text-mid);font-size:0.8rem;cursor:pointer;transition:all 0.15s">
+                  ${skill.label}
+                </button>
+              `).join('')}
+            </div>
+            <p style="font-size:0.72rem;color:var(--text-light);margin-top:8px">Tippe auf Skills zum Auswählen.</p>
+          </div>
+          <button type="submit" class="btn btn-primary" id="add-submit-btn" style="margin-top:20px">Mitarbeiter anlegen</button>
         </form>
       </div>
     `
@@ -616,6 +750,9 @@ export function TeamManagement({ user }) {
                       <button class="btn-edit-target btn btn-ghost btn-sm" data-emp="${emp.id}"
                         style="padding:2px 7px;font-size:0.7rem;line-height:1.6"
                         title="Soll-Stunden bearbeiten">✏</button>
+                      <button class="btn-edit-skills btn btn-ghost btn-sm" data-emp="${emp.id}"
+                        style="padding:2px 7px;font-size:0.7rem;line-height:1.6"
+                        title="Skills bearbeiten">Skills</button>
                     </div>
                   </td>
                   <td style="font-weight:600;color:var(--aubergine)">${fmtHours(todayMins)}</td>
@@ -732,14 +869,29 @@ export function TeamManagement({ user }) {
       })
     })
 
+    container.querySelectorAll('.new-emp-skill-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const skill  = (availableSkills.length ? availableSkills : DEFAULT_SKILLS).find(s => s.id === btn.dataset.skill)
+        const active = btn.dataset.active !== 'true'
+        btn.dataset.active    = active
+        btn.style.borderColor = active ? (skill?.color || 'var(--aubergine)') : 'var(--cream-dark)'
+        btn.style.background  = active ? (skill?.color || 'var(--aubergine)') : 'var(--white)'
+        btn.style.color       = active ? '#fff' : 'var(--text-mid)'
+        btn.style.fontWeight  = active ? '600' : '400'
+        btn.textContent       = (skill?.label ?? btn.dataset.skill) + (active ? ' ✓' : '')
+      })
+    })
+
     container.querySelector('#add-employee-form')?.addEventListener('submit', async e => {
       e.preventDefault()
       const btn     = container.querySelector('#add-submit-btn')
       const errorEl = container.querySelector('#add-error')
       btn.disabled  = true; btn.textContent = 'Anlegen…'
       errorEl.style.display = 'none'
+      const selectedSkills = []
+      e.target.querySelectorAll('.new-emp-skill-btn[data-active="true"]').forEach(b => selectedSkills.push(b.dataset.skill))
       try {
-        await addEmployee(Object.fromEntries(new FormData(e.target)))
+        await addEmployee(Object.fromEntries(new FormData(e.target)), selectedSkills)
         showToast('Mitarbeiter angelegt!', 'success')
         showAddForm = false
         await loadData(); rerender()
@@ -760,6 +912,13 @@ export function TeamManagement({ user }) {
       btn.addEventListener('click', e => {
         e.stopPropagation()   // don't open the daily hours modal
         openTargetHoursModal(btn.dataset.emp)
+      })
+    })
+
+    container.querySelectorAll('.btn-edit-skills[data-emp]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        openSkillEditModal(btn.dataset.emp)
       })
     })
 
