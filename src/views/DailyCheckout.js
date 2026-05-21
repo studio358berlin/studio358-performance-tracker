@@ -272,21 +272,16 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function openHoursModal() {
     const overlay = document.createElement('div')
-    overlay.style.position        = 'fixed'
-    overlay.style.top             = '0'
-    overlay.style.left            = '0'
-    overlay.style.width           = '100vw'
-    overlay.style.height          = '100vh'
-    overlay.style.zIndex          = '9999'
-    overlay.style.display         = 'flex'
-    overlay.style.alignItems      = 'center'
-    overlay.style.justifyContent  = 'center'
-    overlay.style.background      = 'rgba(0,0,0,0.55)'
-    overlay.style.padding         = '16px'
-    overlay.style.boxSizing       = 'border-box'
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
 
     const curHours = hoursToday?.hours_worked ?? 8
     const curBreak = hoursToday?.break_minutes ?? 30
+
+    const profileLocSlug = user?.profile?.location ?? null
+    const profileLocId   = user?.profile?.location_id
+      ?? locations.find(l => l.slug === profileLocSlug)?.id
+      ?? null
+    const curLocId = hoursToday?.location_id ?? profileLocId ?? locations[0]?.id ?? null
 
     overlay.innerHTML = `
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
@@ -305,6 +300,14 @@ export function DailyCheckout({ user, onNavigate }) {
             <input id="wh-break" type="number" min="0" max="180" step="5" value="${curBreak}"
               style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1.1rem;font-weight:600;text-align:center">
           </label>
+          ${locations.length ? `
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Standort
+            <select id="wh-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
+              ${locations.map(l => `<option value="${l.id}" ${l.id === curLocId ? 'selected' : ''}>${l.name}</option>`).join('')}
+            </select>
+          </label>
+          ` : ''}
           <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;font-size:0.85rem;color:var(--text-mid)">
             Netto-Arbeitszeit: <strong id="wh-net" style="color:var(--aubergine)">– Std.</strong>
           </div>
@@ -334,11 +337,12 @@ export function DailyCheckout({ user, onNavigate }) {
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
     overlay.querySelector('#wh-save').addEventListener('click', async () => {
-      const h = Math.max(0.5, parseFloat(hoursInput.value) || 8)
-      const b = Math.max(0, parseInt(breakInput.value) || 0)
+      const h      = Math.max(0.5, parseFloat(hoursInput.value) || 8)
+      const b      = Math.max(0, parseInt(breakInput.value) || 0)
+      const locId  = overlay.querySelector('#wh-location')?.value ?? null
       const saveBtn = overlay.querySelector('#wh-save')
       saveBtn.disabled = true; saveBtn.textContent = 'Speichern...'
-      const ok = await saveHours(h, b)
+      const ok = await saveHours(h, b, locId || null)
       if (ok) overlay.remove()
       else { saveBtn.disabled = false; saveBtn.textContent = 'Speichern' }
     })
@@ -478,27 +482,31 @@ export function DailyCheckout({ user, onNavigate }) {
   function buildMyHoursCard() {
     if (isManager) return ''
 
-    if (!hoursToday) {
-      return `
-        <div style="font-size:0.8rem;color:var(--text-mid);margin:-10px 0 16px;padding:0 2px">
-          Heute erfasste Arbeitszeit: <strong>0 Std. 0 Min.</strong>
-        </div>
-      `
+    let timeStr = '0 Std. 0 Min.'
+    let subLine = ''
+
+    if (hoursToday) {
+      const h = Math.floor(hoursToday.hours_worked)
+      const m = Math.round((hoursToday.hours_worked - h) * 60)
+      timeStr = `${h} Std. ${m} Min.`
+      const treatMins = todayLogs
+        .filter(l => !l.is_cancelled && !l.is_no_show)
+        .reduce((s, l) => s + Number(l.treatment?.duration ?? treatments.find(t => t.id === l.treatment_id)?.duration ?? 60), 0)
+      const netMins = Math.max(1, hoursToday.hours_worked * 60 - hoursToday.break_minutes)
+      const util    = Math.round((treatMins / netMins) * 100)
+      const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
+      const netH    = Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)
+      subLine = `<div style="font-size:0.78rem;color:var(--text-mid);margin-top:4px">Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong> &nbsp;·&nbsp; Auslastung: <strong style="color:${uCol}">${util}%</strong></div>`
     }
 
-    const treatMins = todayLogs
-      .filter(l => !l.is_cancelled && !l.is_no_show)
-      .reduce((s, l) => s + Number(l.treatment?.duration ?? treatments.find(t => t.id === l.treatment_id)?.duration ?? 60), 0)
-    const netMins = Math.max(1, hoursToday.hours_worked * 60 - hoursToday.break_minutes)
-    const util    = Math.round((treatMins / netMins) * 100)
-    const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
-    const netH    = Math.max(0, hoursToday.hours_worked - hoursToday.break_minutes / 60).toFixed(1)
-    const h       = Math.floor(hoursToday.hours_worked)
-    const m       = Math.round((hoursToday.hours_worked - h) * 60)
-
     return `
-      <div style="padding:6px 14px;margin:-10px 0 16px;font-size:0.8rem;color:var(--text-mid)">
-        Heute erfasste Arbeitszeit: <strong style="color:var(--aubergine)">${h} Std. ${m} Min.</strong> · Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong> · Auslastung: <strong style="color:${uCol}">${util}%</strong>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;margin-bottom:16px;background:var(--cream);border-radius:var(--radius-md)">
+        <div>
+          <div style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-light);margin-bottom:5px">Heute erfasst</div>
+          <div style="font-size:1.55rem;font-weight:700;color:var(--aubergine);line-height:1.15">${timeStr}</div>
+          ${subLine}
+        </div>
+        <button id="btn-log-hours" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:7px 13px;font-size:0.82rem">✏ Bearbeiten</button>
       </div>
     `
   }
@@ -1193,6 +1201,7 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
+    container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursModal())
     container.querySelector('#btn-hours-banner')?.addEventListener('click', () => openClockInModal())
     container.querySelectorAll('.btn-early-checkout').forEach(btn => {
       btn.addEventListener('click', () => earlyCheckOut())
