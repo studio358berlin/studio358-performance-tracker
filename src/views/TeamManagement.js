@@ -30,7 +30,7 @@ export function TeamManagement({ user }) {
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
-        .select('employee_id, date, hours_worked, break_minutes, location_id, is_modified, original_hours_worked, modified_at')
+        .select('employee_id, date, hours_worked, break_minutes, location_id, is_modified, original_hours')
         .gte('date', firstOfMonthStr),
       supabase.from('employee_monthly_targets')
         .select('employee_id, target_hours')
@@ -742,11 +742,9 @@ export function TeamManagement({ user }) {
                 if (modifiedEntries.length > 0) {
                   const tooltipLines = modifiedEntries.map(h => {
                     const d  = new Date(h.date + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: '2-digit' })
-                    const oh = h.original_hours_worked != null
-                      ? Math.floor(h.original_hours_worked) + ' Std. ' + Math.round((h.original_hours_worked % 1) * 60) + ' Min.'
-                      : '?'
+                    const oh = h.original_hours ?? '?'
                     const nh = Math.floor(h.hours_worked) + ' Std. ' + Math.round((h.hours_worked % 1) * 60) + ' Min.'
-                    return `${d}: ${oh} → ${nh}`
+                    return `${d}: Original: ${oh} | Geändert: ${nh}`
                   }).join('\n')
                   warnBadge = `<span class="mod-warn-badge" data-tooltip="Auffälligkeit: Arbeitszeit manuell geändert&#10;${tooltipLines.replace(/"/g,'&quot;')}" style="cursor:help;background:#FEF9C3;color:#92400E;border-radius:4px;padding:1px 6px;font-size:0.75rem;font-weight:700;border:1px solid #FDE68A;flex-shrink:0">⚠</span>`
                 }
