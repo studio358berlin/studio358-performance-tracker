@@ -17,13 +17,14 @@ export function EmployeeView({ user, onNavigate }) {
   let analyticsRow = null // row from employee_hours_analytics (contains target_hours_current_month)
   let employeeSkillsWithNames = []   // employee_skills JOIN skills — avoids UUID labels
   let appointments = []              // manager_appointments for this employee
+  let managerId    = null            // ID of the studio manager (for appointment requests)
   let selectedSOPId = null
   let container = null
 
   async function loadData() {
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
 
-    const [evalRes, sopRes, hoursRes, analyticsRes, empSkillsRes, apptRes] = await Promise.all([
+    const [evalRes, sopRes, hoursRes, analyticsRes, empSkillsRes, apptRes, mgrRes] = await Promise.all([
       supabase.from('performance_entries').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
       supabase.from('sops').select('*').order('updated_at', { ascending: false }),
       supabase.from('employee_daily_hours')
@@ -41,6 +42,11 @@ export function EmployeeView({ user, onNavigate }) {
         .select('*')
         .eq('employee_id', user.id)
         .order('scheduled_date', { ascending: false }),
+      supabase.from('profiles')
+        .select('id')
+        .or('is_manager.eq.true,role.eq.manager')
+        .limit(1)
+        .maybeSingle(),
     ])
     const all    = evalRes.data ?? []
     allEntries   = all
@@ -56,6 +62,7 @@ export function EmployeeView({ user, onNavigate }) {
       category: row.skills?.category || 'custom',
     }))
     appointments = apptRes.data ?? []
+    managerId    = mgrRes.data?.id ?? null
   }
 
   function getLatest() { return evaluations[0] ?? null }
@@ -272,6 +279,7 @@ export function EmployeeView({ user, onNavigate }) {
       btn.disabled = true; btn.textContent = 'Senden...'
       const { error } = await supabase.from('manager_appointments').insert({
         employee_id:    user.id,
+        manager_id:     managerId,
         scheduled_date: date,
         note:           [note, time ? `Wunschuhrzeit: ${time}` : null].filter(Boolean).join(' · ') || null,
         status:         'pending_manager',

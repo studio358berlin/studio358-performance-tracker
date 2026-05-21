@@ -20,6 +20,7 @@ export function TeamManagement({ user }) {
   let availableSkills   = []   // from public.skills table
   let employeeSkillsMap = {}   // employee_id → skill_id[]
   let appointmentsMap   = {}   // employee_id → manager_appointments[]
+  let allAppointments   = []   // flat list for global pending panel
 
   async function loadData() {
     const now             = new Date()
@@ -39,7 +40,9 @@ export function TeamManagement({ user }) {
         .eq('month', now.getMonth() + 1),
       supabase.from('skills').select('*').order('name'),
       supabase.from('employee_skills').select('employee_id, skill_id'),
-      supabase.from('manager_appointments').select('*').order('scheduled_date', { ascending: false }),
+      supabase.from('manager_appointments').select('*')
+        .or(`manager_id.eq.${user.id},status.eq.pending_manager,status.eq.pending_employee`)
+        .order('scheduled_date', { ascending: false }),
     ])
     employees     = empRes.data  ?? []
     evaluations   = evalRes.data ?? []
@@ -64,9 +67,10 @@ export function TeamManagement({ user }) {
       employeeSkillsMap[row.employee_id].push(row.skill_id)
     }
 
-    // Build employee_id → appointments[] lookup
+    // Build flat list + employee_id → appointments[] lookup
+    allAppointments = apptsRes.data ?? []
     appointmentsMap = {}
-    for (const a of (apptsRes.data ?? [])) {
+    for (const a of allAppointments) {
       if (!appointmentsMap[a.employee_id]) appointmentsMap[a.employee_id] = []
       appointmentsMap[a.employee_id].push(a)
     }
@@ -982,6 +986,40 @@ export function TeamManagement({ user }) {
     `
   }
 
+  function buildPendingAppointmentsPanel() {
+    const pending = allAppointments.filter(a => a.status === 'pending_manager')
+    if (!pending.length) return ''
+
+    const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+
+    return `
+      <div class="card" style="margin-bottom:24px;border-left:4px solid var(--terracotta)">
+        <div class="card-header">
+          <h4>📅 Eingegangene Terminanfragen</h4>
+          <span style="font-size:0.78rem;font-weight:700;color:var(--terracotta)">${pending.length} offen</span>
+        </div>
+        <div style="padding:0 16px">
+          ${pending.map(a => {
+            const emp = employees.find(e => e.id === a.employee_id)
+            return `
+              <div style="padding:12px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+                <div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${emp?.full_name ?? '–'}</div>
+                  <div style="font-size:0.8rem;color:var(--text-mid)">📅 ${fmtDate(a.scheduled_date)}</div>
+                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0">
+                  <button class="btn-global-confirm-appt" data-id="${a.id}" style="background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 14px;font-size:0.82rem;cursor:pointer;font-weight:600">✓ Bestätigen</button>
+                  <button class="btn-global-decline-appt" data-id="${a.id}" style="background:var(--terracotta);color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:0.82rem;cursor:pointer">✕ Ablehnen</button>
+                </div>
+              </div>
+            `
+          }).join('')}
+        </div>
+      </div>
+    `
+  }
+
   function buildListHTML() {
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -999,6 +1037,8 @@ export function TeamManagement({ user }) {
         <button class="location-tab ${activeLocation === 'mitte'  ? 'active' : ''}" data-loc="mitte">Mitte</button>
         <button class="location-tab ${activeLocation === 'kadewe' ? 'active' : ''}" data-loc="kadewe">KaDeWe</button>
       </div>
+
+      ${buildPendingAppointmentsPanel()}
 
       ${buildHoursTable()}
 
@@ -1146,6 +1186,28 @@ export function TeamManagement({ user }) {
       btn.addEventListener('click', e => {
         e.stopPropagation()
         openSkillEditModal(btn.dataset.emp)
+      })
+    })
+
+    // Global pending appointment actions (list view)
+    container.querySelectorAll('.btn-global-confirm-appt[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { error } = await supabase.from('manager_appointments')
+          .update({ status: 'confirmed', manager_id: user.id }).eq('id', btn.dataset.id)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+        showToast('Termin bestätigt!')
+        await loadData(); rerender()
+      })
+    })
+
+    container.querySelectorAll('.btn-global-decline-appt[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Anfrage ablehnen?')) return
+        const { error } = await supabase.from('manager_appointments')
+          .update({ status: 'cancelled' }).eq('id', btn.dataset.id)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+        showToast('Anfrage abgelehnt.')
+        await loadData(); rerender()
       })
     })
 
