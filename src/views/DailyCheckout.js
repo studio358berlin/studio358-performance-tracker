@@ -1011,51 +1011,40 @@ export function DailyCheckout({ user, onNavigate }) {
       ${!isManager ? buildHoursBanner() : ''}
 
       ${isManager ? `
-        <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
           <div class="location-tabs" style="margin:0">
             <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
             <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
             <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
-            <div>
-              <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Standort</label>
-              <select id="location-select" style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;min-width:220px">
-                <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte (Gesamtbilanz)</option>
-                ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
-              </select>
-            </div>
-            <div style="display:flex;gap:8px">
-              <div>
-                <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Von</label>
-                <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
-                  style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
-              </div>
-              <div>
-                <label style="font-size:0.8rem;color:var(--text-mid);display:block;margin-bottom:6px">Bis</label>
-                <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
-                  style="padding:8px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.9rem;color:var(--aubergine)">
-              </div>
-            </div>
-          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
+            <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
+            <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+          </label>
+          <select id="location-select" style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+            <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
+            ${locations.map(l => `<option value="${l.id}" ${l.id === selectedLocationId ? 'selected' : ''}>${l.name}</option>`).join('')}
+          </select>
         </div>
       ` : `
-        <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
           <div class="location-tabs" style="margin:0">
             <button class="location-tab ${period==='today'?'active':''}" data-period="today">Heute</button>
             <button class="location-tab ${period==='week' ?'active':''}" data-period="week">Woche</button>
             <button class="location-tab ${period==='month'?'active':''}" data-period="month">Monat</button>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
-              <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
-                style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
-              <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
-                style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
-            </label>
-          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Von
+            <input type="date" id="date-from" value="${dateFrom}" max="${localDate()}"
+              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-mid)">Bis
+            <input type="date" id="date-to" value="${dateTo}" max="${localDate()}"
+              style="padding:7px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem;color:var(--aubergine)">
+          </label>
         </div>
       `}
 

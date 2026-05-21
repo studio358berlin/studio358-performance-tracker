@@ -15,7 +15,6 @@ export function RevenueAnalytics({ user }) {
   let dateFrom      = localStorage.getItem('analyticsFrom')   || localDate()
   let dateTo        = localStorage.getItem('analyticsTo')     || localDate()
   let container     = null
-  let clockInterval = null
 
   // Performance matrix state
   const _now   = new Date()
@@ -569,6 +568,13 @@ export function RevenueAnalytics({ user }) {
 
   // ── Main HTML ─────────────────────────────────────────────────────────────
 
+  function periodSubtitle() {
+    if (period === 'today') return 'Manager Übersicht · Heute'
+    if (period === 'week')  return 'Manager Übersicht · Diese Woche'
+    if (period === 'month') return 'Manager Übersicht · Dieser Monat'
+    return 'Manager Übersicht · Benutzerdefinierter Zeitraum'
+  }
+
   function buildHTML() {
     const k = kpis()
     const { from, label } = dateRange()
@@ -577,7 +583,7 @@ export function RevenueAnalytics({ user }) {
       <div class="page-header">
         <div>
           <h2>Umsatz Cockpit</h2>
-          <p style="color:var(--text-light);font-size:0.875rem">Manager Übersicht · Live: <span id="live-clock">${fmtLiveClock()}</span></p>
+          <p style="color:var(--text-light);font-size:0.875rem">${periodSubtitle()}</p>
         </div>
         <button class="btn btn-sm btn-accent" id="export-csv-btn">↓ Umsatz Export (.CSV)</button>
       </div>
@@ -740,17 +746,10 @@ export function RevenueAnalytics({ user }) {
     container.querySelector('#perf-month')?.addEventListener('change', onPerfChange)
     container.querySelector('#perf-year')?.addEventListener('change',  onPerfChange)
 
-    if (clockInterval) clearInterval(clockInterval)
-    clockInterval = setInterval(() => {
-      const el = container.querySelector('#live-clock')
-      if (el) el.textContent = fmtLiveClock()
-      else { clearInterval(clockInterval); clockInterval = null }
-    }, 1000)
   }
 
   function rerender() {
     if (!container) return
-    if (clockInterval) { clearInterval(clockInterval); clockInterval = null }
     container.innerHTML = buildHTML()
     attachEvents()
   }
@@ -773,12 +772,6 @@ export function RevenueAnalytics({ user }) {
 function localDate() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
-
-function fmtLiveClock() {
-  const d   = new Date()
-  const pad = n => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 function fmt(n) {
