@@ -292,7 +292,8 @@ export function TeamManagement({ user }) {
     const mgrPending = appts.filter(a => a.status === 'pending_employee' && a.initiated_by !== emp.id)
     const confirmed  = appts.filter(a => a.status === 'confirmed')
     const isEmpty    = !empReqs.length && !mgrPending.length && !confirmed.length
-    const fmtDate    = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+    const fmtDate    = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) }
+    const fmtTime    = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
 
     return `
       <div class="card" style="margin-bottom:20px">
@@ -307,10 +308,10 @@ export function TeamManagement({ user }) {
             ${empReqs.map(a => `
               <div style="padding:10px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
                 <div>
-                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
                   ${a.note ? `<div style="font-size:0.78rem;color:var(--text-mid)">${a.note}</div>` : ''}
                 </div>
-                <button class="btn-confirm-emp-req" data-id="${a.id}" style="background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);padding:5px 12px;font-size:0.8rem;cursor:pointer;font-weight:600;flex-shrink:0">Bestätigen</button>
+                <button class="btn-confirm-emp-req" data-id="${a.id}" style="background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);padding:5px 12px;font-size:0.8rem;cursor:pointer;font-weight:600;flex-shrink:0">✓ Bestätigen</button>
               </div>
             `).join('')}
           </div>
@@ -322,7 +323,7 @@ export function TeamManagement({ user }) {
             ${mgrPending.map(a => `
               <div style="padding:8px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
                 <div>
-                  <div style="font-weight:600;font-size:0.85rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-weight:600;font-size:0.85rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
                   <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
                 </div>
                 <span style="font-size:0.72rem;color:var(--gold);background:rgba(212,162,66,0.12);padding:3px 8px;border-radius:var(--radius-sm);white-space:nowrap">Ausstehend</span>
@@ -335,15 +336,32 @@ export function TeamManagement({ user }) {
           <div style="padding:12px 16px 4px">
             <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">Bestätigte Termine</div>
             ${confirmed.map(a => `
-              <div style="padding:8px 0;border-bottom:1px solid var(--cream);display:flex;justify-content:space-between;align-items:center;gap:10px">
-                <div>
-                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
-                  <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
-                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
+              <div style="padding:10px 0;border-bottom:1px solid var(--cream)">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                  <div>
+                    <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
+                    <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
+                    ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
+                  </div>
+                  ${a.type === 'online' && a.meet_link ? `
+                    <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:5px 10px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet</a>
+                  ` : ''}
                 </div>
-                ${a.type === 'online' && a.meet_link ? `
-                  <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:5px 10px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet</a>
-                ` : ''}
+                ${a.is_signed_off ? `<div style="font-size:0.72rem;color:#27AE60;font-weight:600;margin-top:5px">✓ Mitarbeiter hat das Protokoll bestätigt</div>` : ''}
+                <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                  <label style="font-size:0.8rem;font-weight:600;color:var(--text-mid)">Gesprächsprotokoll / Fazit</label>
+                  <textarea class="appt-protocol-ta" data-id="${a.id}" rows="3"
+                    placeholder="Gesprächsprotokoll, Vereinbarungen, nächste Schritte..."
+                    style="width:100%;padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;resize:vertical;font-family:inherit;box-sizing:border-box">${a.protocol_text || ''}</textarea>
+                  <label style="font-size:0.8rem;font-weight:600;color:var(--text-mid)">Meeting-Transkript (optional)</label>
+                  <textarea class="appt-transcript-ta" data-id="${a.id}" rows="3"
+                    placeholder="Google Meet Transkript oder Notizen hier einfügen..."
+                    style="width:100%;padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.82rem;resize:vertical;font-family:inherit;box-sizing:border-box">${a.transcript_text || ''}</textarea>
+                  <button class="btn-save-protocol" data-id="${a.id}"
+                    style="align-self:flex-start;padding:7px 18px;background:var(--aubergine);color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:600;cursor:pointer">
+                    Protokoll speichern
+                  </button>
+                </div>
               </div>
             `).join('')}
           </div>
@@ -357,6 +375,161 @@ export function TeamManagement({ user }) {
         ` : '<div style="height:4px"></div>'}
       </div>
     `
+  }
+
+  function buildManagerScheduleCard(emp) {
+    const today = localDate()
+    return `
+      <div class="card" style="margin-bottom:20px;border-left:4px solid var(--aubergine)">
+        <div class="card-header" style="margin-bottom:4px">
+          <h4>📅 Performance-Gespräch ansetzen</h4>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-mid);margin-bottom:6px">Format</div>
+            <div style="display:flex;gap:8px">
+              <button type="button" id="msc-type-offline" data-emp="${emp.id}"
+                style="flex:1;padding:9px 12px;border:2px solid var(--aubergine);border-radius:var(--radius-sm);background:var(--aubergine);color:#fff;font-weight:600;font-size:0.85rem;cursor:pointer">
+                📍 Offline
+              </button>
+              <button type="button" id="msc-type-online" data-emp="${emp.id}"
+                style="flex:1;padding:9px 12px;border:2px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);color:var(--text-mid);font-size:0.85rem;cursor:pointer">
+                🌐 Online
+              </button>
+            </div>
+          </div>
+          <div id="msc-field-location">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Standort
+              <select id="msc-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
+                <option value="mitte">Berlin Mitte</option>
+                <option value="kadewe">KaDeWe</option>
+              </select>
+            </label>
+          </div>
+          <div id="msc-field-meet" style="display:none">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Google Meet Link
+              <input id="msc-meet" type="url" placeholder="https://meet.google.com/..."
+                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Datum
+              <input id="msc-date" type="date" min="${today}" value="${today}"
+                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine)">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Uhrzeit (optional)
+              <input id="msc-time" type="time"
+                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine)">
+            </label>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Notiz (optional)
+            <textarea id="msc-note" rows="2" placeholder="Thema des Gesprächs, Vorbereitungshinweise..."
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;resize:none;font-family:inherit"></textarea>
+          </label>
+          <button id="msc-submit" class="btn btn-accent" data-emp="${emp.id}"
+            style="width:100%;justify-content:center;padding:14px;font-size:0.88rem;font-weight:700;letter-spacing:0.02em">
+            📅 + FEEDBACK-TERMIN VERBINDLICH SETZEN
+          </button>
+        </div>
+      </div>
+    `
+  }
+
+  function openConfirmAppointmentModal(apptId) {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Termin bestätigen</h3>
+          <button id="ca-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <p style="font-size:0.85rem;color:var(--text-mid);margin:0">Wähle das Format für diesen Termin:</p>
+          <div style="display:flex;gap:8px">
+            <button type="button" id="ca-type-offline"
+              style="flex:1;padding:9px;border:2px solid var(--aubergine);border-radius:var(--radius-sm);background:var(--aubergine);color:#fff;font-weight:600;font-size:0.85rem;cursor:pointer">
+              📍 Offline
+            </button>
+            <button type="button" id="ca-type-online"
+              style="flex:1;padding:9px;border:2px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);color:var(--text-mid);font-size:0.85rem;cursor:pointer">
+              🌐 Online
+            </button>
+          </div>
+          <div id="ca-field-location">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Standort
+              <select id="ca-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
+                <option value="mitte">Berlin Mitte</option>
+                <option value="kadewe">KaDeWe</option>
+              </select>
+            </label>
+          </div>
+          <div id="ca-field-meet" style="display:none">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Google Meet Link
+              <input id="ca-meet" type="url" value="https://meet.google.com/studio358-workspace"
+                placeholder="https://meet.google.com/..."
+                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
+            </label>
+          </div>
+        </div>
+        <div style="padding:0 20px 20px">
+          <button id="ca-save" class="btn btn-accent" style="width:100%;justify-content:center">✓ Termin verbindlich bestätigen</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    let selectedType = 'offline'
+    const offlineBtn = overlay.querySelector('#ca-type-offline')
+    const onlineBtn  = overlay.querySelector('#ca-type-online')
+    const fieldLoc   = overlay.querySelector('#ca-field-location')
+    const fieldMeet  = overlay.querySelector('#ca-field-meet')
+
+    function setCaType(t) {
+      selectedType = t
+      const onBtn  = t === 'offline' ? offlineBtn : onlineBtn
+      const offBtn = t === 'offline' ? onlineBtn  : offlineBtn
+      onBtn.style.borderColor  = 'var(--aubergine)'; onBtn.style.background = 'var(--aubergine)'; onBtn.style.color = '#fff'; onBtn.style.fontWeight = '600'
+      offBtn.style.borderColor = 'var(--cream-dark)'; offBtn.style.background = 'var(--white)'; offBtn.style.color = 'var(--text-mid)'; offBtn.style.fontWeight = '400'
+      fieldLoc.style.display  = t === 'offline' ? '' : 'none'
+      fieldMeet.style.display = t === 'online'  ? '' : 'none'
+    }
+
+    offlineBtn.addEventListener('click', () => setCaType('offline'))
+    onlineBtn.addEventListener('click',  () => setCaType('online'))
+    overlay.querySelector('#ca-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#ca-save').addEventListener('click', async () => {
+      const location = selectedType === 'offline' ? (overlay.querySelector('#ca-location').value || null) : null
+      const meetLink = selectedType === 'online'  ? (overlay.querySelector('#ca-meet').value.trim() || null) : null
+
+      if (selectedType === 'online' && !meetLink) { showToast('Bitte gib einen Google Meet Link ein.', 'error'); return }
+
+      const btn = overlay.querySelector('#ca-save')
+      btn.disabled = true; btn.textContent = 'Speichern...'
+
+      const { error } = await supabase.from('manager_appointments')
+        .update({ status: 'confirmed', manager_id: user.id, type: selectedType, location, meet_link: meetLink })
+        .eq('id', apptId)
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = '✓ Termin verbindlich bestätigen'
+        return
+      }
+      showToast('Termin bestätigt!')
+      overlay.remove()
+      await loadData(); rerender()
+    })
   }
 
   function openManagerAppointmentModal(empId) {
@@ -455,11 +628,11 @@ export function TeamManagement({ user }) {
       const { error } = await supabase.from('manager_appointments').insert({
         employee_id:    empId,
         manager_id:     user.id,
-        scheduled_date: date,
+        scheduled_date: time ? `${date}T${time}:00` : date,
         type:           selectedType,
         location,
         meet_link:      meetLink,
-        note:           [note, time ? `Uhrzeit: ${time}` : null].filter(Boolean).join(' · ') || null,
+        note:           note || null,
         status:         'pending_employee',
         initiated_by:   user.id,
       })
@@ -628,6 +801,8 @@ export function TeamManagement({ user }) {
         </div>
         <div class="chart-container"><canvas id="team-detail-chart"></canvas></div>
       </div>
+
+      ${buildManagerScheduleCard(emp)}
 
       ${comparisonRow ? buildComparisonCard(comparisonRow, emp.level, {
           selfLabel:    'Selbsteinschätzung (Mitarbeiter)',
@@ -990,7 +1165,8 @@ export function TeamManagement({ user }) {
     const pending = allAppointments.filter(a => a.status === 'pending_manager')
     if (!pending.length) return ''
 
-    const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+    const fmtDate = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) }
+    const fmtTime = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
 
     return `
       <div class="card" style="margin-bottom:24px;border-left:4px solid var(--terracotta)">
@@ -1005,7 +1181,7 @@ export function TeamManagement({ user }) {
               <div style="padding:12px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
                 <div>
                   <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${emp?.full_name ?? '–'}</div>
-                  <div style="font-size:0.8rem;color:var(--text-mid)">📅 ${fmtDate(a.scheduled_date)}</div>
+                  <div style="font-size:0.8rem;color:var(--text-mid)">📅 ${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
                   ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
                 </div>
                 <div style="display:flex;gap:6px;flex-shrink:0">
@@ -1094,12 +1270,92 @@ export function TeamManagement({ user }) {
       openManagerAppointmentModal(e.currentTarget.dataset.emp)
     })
 
+    // Inline manager schedule card
+    let mscSelectedType = 'offline'
+    const mscOfflineBtn = container.querySelector('#msc-type-offline')
+    const mscOnlineBtn  = container.querySelector('#msc-type-online')
+    const mscFieldLoc   = container.querySelector('#msc-field-location')
+    const mscFieldMeet  = container.querySelector('#msc-field-meet')
+
+    function setMscType(t) {
+      mscSelectedType = t
+      const onBtn  = t === 'offline' ? mscOfflineBtn : mscOnlineBtn
+      const offBtn = t === 'offline' ? mscOnlineBtn  : mscOfflineBtn
+      onBtn.style.borderColor  = 'var(--aubergine)'; onBtn.style.background = 'var(--aubergine)'; onBtn.style.color = '#fff'; onBtn.style.fontWeight = '600'
+      offBtn.style.borderColor = 'var(--cream-dark)'; offBtn.style.background = 'var(--white)'; offBtn.style.color = 'var(--text-mid)'; offBtn.style.fontWeight = '400'
+      if (mscFieldLoc)  mscFieldLoc.style.display  = t === 'offline' ? '' : 'none'
+      if (mscFieldMeet) mscFieldMeet.style.display = t === 'online'  ? '' : 'none'
+    }
+
+    mscOfflineBtn?.addEventListener('click', () => setMscType('offline'))
+    mscOnlineBtn?.addEventListener('click',  () => setMscType('online'))
+
+    container.querySelector('#msc-submit')?.addEventListener('click', async e => {
+      const empId    = e.currentTarget.dataset.emp
+      const date     = container.querySelector('#msc-date').value
+      const time     = container.querySelector('#msc-time').value || null
+      const note     = container.querySelector('#msc-note').value.trim() || null
+      const location = mscSelectedType === 'offline' ? (container.querySelector('#msc-location').value || null) : null
+      const meetLink = mscSelectedType === 'online'  ? (container.querySelector('#msc-meet').value.trim() || null) : null
+
+      if (!date) { showToast('Bitte wähle ein Datum.', 'error'); return }
+      if (mscSelectedType === 'online' && !meetLink) { showToast('Bitte gib einen Google Meet Link ein.', 'error'); return }
+
+      const btn = e.currentTarget
+      btn.disabled = true; btn.textContent = 'Speichern...'
+
+      // Build performance snapshot at time of booking
+      const snapEmp   = employees.find(em => em.id === empId)
+      const snapEvals = getEvals(empId).filter(ev => ev.manager_scores && Object.keys(ev.manager_scores).length > 0)
+      const snapPi    = snapEvals[0] ? calculatePerformance(mapEntryToEngine(snapEvals[0], snapEmp?.level || 'junior', snapEmp)).PI_Monat : null
+      const snapHours = employeeHours
+        .filter(h => h.employee_id === empId)
+        .reduce((s, h) => s + Math.max(0, h.hours_worked - (h.break_minutes || 0) / 60), 0)
+      const performance_snapshot = { pi_monat: snapPi, hours_month: Math.round(snapHours * 10) / 10, captured_at: new Date().toISOString() }
+
+      const { error } = await supabase.from('manager_appointments').insert({
+        employee_id:    empId,
+        manager_id:     user.id,
+        scheduled_date: time ? `${date}T${time}:00` : date,
+        type:           mscSelectedType,
+        location,
+        meet_link:      meetLink,
+        note:           note || null,
+        status:         'pending_employee',
+        initiated_by:   user.id,
+        performance_snapshot,
+      })
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = '📅 + FEEDBACK-TERMIN VERBINDLICH SETZEN'
+        return
+      }
+      showToast(`Termin für ${employees.find(em => em.id === empId)?.full_name ?? '–'} gesendet!`)
+      await loadData()
+      rerender()
+    })
+
     container.querySelectorAll('.btn-confirm-emp-req[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => openConfirmAppointmentModal(btn.dataset.id))
+    })
+
+    container.querySelectorAll('.btn-save-protocol[data-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
+        const apptId       = btn.dataset.id
+        const protocolText = container.querySelector(`.appt-protocol-ta[data-id="${apptId}"]`)?.value.trim() || null
+        const transcriptText = container.querySelector(`.appt-transcript-ta[data-id="${apptId}"]`)?.value.trim() || null
+        btn.disabled = true; btn.textContent = 'Speichern...'
         const { error } = await supabase.from('manager_appointments')
-          .update({ status: 'confirmed', manager_id: user.id }).eq('id', btn.dataset.id)
-        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-        showToast('Termin bestätigt!')
+          .update({ protocol_text: protocolText, transcript_text: transcriptText })
+          .eq('id', apptId)
+        if (error) {
+          showToast('Fehler: ' + error.message, 'error')
+          btn.disabled = false; btn.textContent = 'Protokoll speichern'
+          return
+        }
+        showToast('Protokoll gespeichert!')
+        btn.disabled = false; btn.textContent = 'Protokoll speichern'
         await loadData(); rerender()
       })
     })
@@ -1191,13 +1447,7 @@ export function TeamManagement({ user }) {
 
     // Global pending appointment actions (list view)
     container.querySelectorAll('.btn-global-confirm-appt[data-id]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const { error } = await supabase.from('manager_appointments')
-          .update({ status: 'confirmed', manager_id: user.id }).eq('id', btn.dataset.id)
-        if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-        showToast('Termin bestätigt!')
-        await loadData(); rerender()
-      })
+      btn.addEventListener('click', () => openConfirmAppointmentModal(btn.dataset.id))
     })
 
     container.querySelectorAll('.btn-global-decline-appt[data-id]').forEach(btn => {

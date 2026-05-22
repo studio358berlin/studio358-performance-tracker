@@ -157,7 +157,8 @@ export function EmployeeView({ user, onNavigate }) {
   }
 
   function buildAppointmentsSection() {
-    const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+    const fmtDate = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) }
+    const fmtTime = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
     const fmtLoc  = l => ({ mitte: 'Berlin Mitte', kadewe: 'KaDeWe' }[l] ?? l ?? '–')
 
     const pendingInvites    = appointments.filter(a => a.status === 'pending_employee' && a.initiated_by !== user.id)
@@ -179,7 +180,7 @@ export function EmployeeView({ user, onNavigate }) {
             ${pendingInvites.map(a => `
               <div style="padding:10px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
                 <div>
-                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
                   <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online · Google Meet' : '📍 ' + fmtLoc(a.location)}</div>
                   ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
                 </div>
@@ -198,7 +199,7 @@ export function EmployeeView({ user, onNavigate }) {
             ${myPendingRequests.map(a => `
               <div style="padding:8px 0;border-bottom:1px solid var(--cream-dark);display:flex;justify-content:space-between;align-items:center;gap:10px">
                 <div>
-                  <div style="font-weight:600;font-size:0.85rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
+                  <div style="font-weight:600;font-size:0.85rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
                   ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
                 </div>
                 <span style="font-size:0.72rem;color:var(--gold);background:rgba(212,162,66,0.12);padding:3px 8px;border-radius:var(--radius-sm);white-space:nowrap">Ausstehend</span>
@@ -211,16 +212,31 @@ export function EmployeeView({ user, onNavigate }) {
           <div style="padding:12px 16px 4px">
             <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">Bestätigte Termine</div>
             ${confirmed.map(a => `
-              <div style="padding:8px 0;border-bottom:1px solid var(--cream);display:flex;justify-content:space-between;align-items:center;gap:10px">
-                <div>
-                  <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${a.scheduled_time ? ' · ' + a.scheduled_time.slice(0,5) + ' Uhr' : ''}</div>
-                  <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + fmtLoc(a.location)}</div>
-                  ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
+              <div style="padding:10px 0;border-bottom:1px solid var(--cream)">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                  <div>
+                    <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
+                    <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + fmtLoc(a.location)}</div>
+                    ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
+                  </div>
+                  ${a.type === 'online' && a.meet_link ? `
+                    <div style="display:flex;gap:6px;flex-shrink:0">
+                      <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap">📹 Meet beitreten</a>
+                      <button class="btn-copy-meet" data-link="${a.meet_link}" style="background:var(--cream-dark);border:none;border-radius:var(--radius-sm);padding:6px 10px;font-size:0.85rem;cursor:pointer" title="Link kopieren">📋</button>
+                    </div>
+                  ` : ''}
                 </div>
-                ${a.type === 'online' && a.meet_link ? `
-                  <div style="display:flex;gap:6px;flex-shrink:0">
-                    <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap">📹 Meet beitreten</a>
-                    <button class="btn-copy-meet" data-link="${a.meet_link}" style="background:var(--cream-dark);border:none;border-radius:var(--radius-sm);padding:6px 10px;font-size:0.85rem;cursor:pointer" title="Link kopieren">📋</button>
+                ${a.protocol_text ? `
+                  <div style="margin-top:10px;background:rgba(61,43,53,0.04);border-radius:var(--radius-sm);padding:10px 12px;border-left:3px solid var(--aubergine)">
+                    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll</div>
+                    <div style="font-size:0.85rem;color:var(--text-mid);white-space:pre-wrap">${a.protocol_text}</div>
+                    ${a.is_signed_off
+                      ? `<div style="margin-top:8px;font-size:0.75rem;color:#27AE60;font-weight:600">✓ Du hast dieses Protokoll bestätigt</div>`
+                      : `<button class="btn-signoff-protocol" data-id="${a.id}"
+                          style="margin-top:10px;width:100%;padding:10px 14px;background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:700;cursor:pointer;line-height:1.4;text-align:center">
+                          ✓ Ich habe das Gesprächsprotokoll gelesen und bestätige es
+                        </button>`
+                    }
                   </div>
                 ` : ''}
               </div>
@@ -280,8 +296,8 @@ export function EmployeeView({ user, onNavigate }) {
       const { error } = await supabase.from('manager_appointments').insert({
         employee_id:    user.id,
         manager_id:     managerId,
-        scheduled_date: date,
-        note:           [note, time ? `Wunschuhrzeit: ${time}` : null].filter(Boolean).join(' · ') || null,
+        scheduled_date: time ? `${date}T${time}:00` : date,
+        note:           note || null,
         status:         'pending_manager',
         initiated_by:   user.id,
         type:           'offline',
@@ -485,6 +501,21 @@ export function EmployeeView({ user, onNavigate }) {
           .update({ status: 'cancelled' }).eq('id', btn.dataset.id)
         if (error) { showToast('Fehler: ' + error.message, 'error'); return }
         showToast('Einladung abgelehnt.')
+        await loadData(); rerender()
+      })
+    })
+
+    container.querySelectorAll('.btn-signoff-protocol[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = 'Speichern...'
+        const { error } = await supabase.from('manager_appointments')
+          .update({ is_signed_off: true }).eq('id', btn.dataset.id)
+        if (error) {
+          showToast('Fehler: ' + error.message, 'error')
+          btn.disabled = false; btn.textContent = '✓ Ich habe das Gesprächsprotokoll gelesen und bestätige es'
+          return
+        }
+        showToast('Protokoll bestätigt!')
         await loadData(); rerender()
       })
     })
