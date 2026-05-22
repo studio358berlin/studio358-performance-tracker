@@ -410,7 +410,7 @@ export function TeamManagement({ user }) {
           <div id="msc-field-meet" style="display:none">
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Google Meet Link
-              <input id="msc-meet" type="url" placeholder="https://meet.google.com/..."
+              <input id="msc-meet" type="url" value="https://meet.google.com/evk-uwqn-erb" placeholder="https://meet.google.com/..."
                 style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
             </label>
           </div>
@@ -474,7 +474,7 @@ export function TeamManagement({ user }) {
           <div id="ca-field-meet" style="display:none">
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Google Meet Link
-              <input id="ca-meet" type="url" value="https://meet.google.com/studio358-workspace"
+              <input id="ca-meet" type="url" value="https://meet.google.com/evk-uwqn-erb"
                 placeholder="https://meet.google.com/..."
                 style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
             </label>
@@ -568,7 +568,7 @@ export function TeamManagement({ user }) {
           <div id="ma-field-meet" style="display:none">
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Google Meet Link
-              <input id="ma-meet" type="url" placeholder="https://meet.google.com/..." style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
+              <input id="ma-meet" type="url" value="https://meet.google.com/evk-uwqn-erb" placeholder="https://meet.google.com/..." style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
             </label>
           </div>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
@@ -1305,7 +1305,7 @@ export function TeamManagement({ user }) {
           <div id="lsf-field-meet" style="display:none">
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Google Meet Link
-              <input id="lsf-meet" type="url" value="https://meet.google.com/studio358-workspace"
+              <input id="lsf-meet" type="url" value="https://meet.google.com/evk-uwqn-erb"
                 placeholder="https://meet.google.com/..."
                 style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
             </label>
