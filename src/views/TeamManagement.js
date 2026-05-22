@@ -290,8 +290,9 @@ export function TeamManagement({ user }) {
     const appts      = appointmentsMap[emp.id] ?? []
     const empReqs    = appts.filter(a => a.status === 'pending_manager'  && a.initiated_by === emp.id)
     const mgrPending = appts.filter(a => a.status === 'pending_employee' && a.initiated_by !== emp.id)
-    const confirmed  = appts.filter(a => a.status === 'confirmed')
-    const isEmpty    = !empReqs.length && !mgrPending.length && !confirmed.length
+    const active     = appts.filter(a => a.status === 'confirmed' && !a.is_signed_off)
+    const archived   = appts.filter(a => a.status === 'confirmed' && a.is_signed_off)
+    const isEmpty    = !empReqs.length && !mgrPending.length && !active.length && !archived.length
     const fmtDate    = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) }
     const fmtTime    = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
 
@@ -332,14 +333,17 @@ export function TeamManagement({ user }) {
           </div>
         ` : ''}
 
-        ${confirmed.length > 0 ? `
+        ${active.length > 0 ? `
           <div style="padding:12px 16px 4px">
-            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">Bestätigte Termine</div>
-            ${confirmed.map(a => `
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">🗓️ Anstehende Termine</div>
+            ${active.map(a => `
               <div style="padding:10px 0;border-bottom:1px solid var(--cream)">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
                   <div>
-                    <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                      <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
+                      ${a.protocol_text ? `<span style="font-size:0.7rem;font-weight:700;color:#E67E22;background:rgba(230,126,34,0.12);padding:2px 7px;border-radius:var(--radius-sm);white-space:nowrap">⏳ Sign-Off ausstehend</span>` : ''}
+                    </div>
                     <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
                     ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
                   </div>
@@ -347,7 +351,6 @@ export function TeamManagement({ user }) {
                     <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:5px 10px;font-size:0.78rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet</a>
                   ` : ''}
                 </div>
-                ${a.is_signed_off ? `<div style="font-size:0.72rem;color:#27AE60;font-weight:600;margin-top:5px">✓ Mitarbeiter hat das Protokoll bestätigt</div>` : ''}
                 <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
                   <label style="font-size:0.8rem;font-weight:600;color:var(--text-mid)">Gesprächsprotokoll / Fazit</label>
                   <textarea class="appt-protocol-ta" data-id="${a.id}" rows="3"
@@ -364,6 +367,26 @@ export function TeamManagement({ user }) {
                 </div>
               </div>
             `).join('')}
+          </div>
+        ` : ''}
+
+        ${archived.length > 0 ? `
+          <div style="padding:10px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">📂 Gesprächshistorie</div>
+            <div style="${archived.length > 3 ? 'max-height:180px;overflow-y:auto;' : ''}">
+              ${archived.map(a => {
+                const fmtDt = d => { if (!d) return '–'; const dt = new Date(d); if (isNaN(dt)) return '–'; const h = dt.getHours(), m = dt.getMinutes(); const time = (!h && !m) ? '' : ' · ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'); return dt.toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric', year: '2-digit' }) + time }
+                return `
+                <div style="padding:5px 0;border-bottom:1px solid var(--cream);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:0.75rem;color:var(--text-light);flex-shrink:0">${fmtDt(a.scheduled_date)}</span>
+                  ${a.note ? `<span style="font-size:0.75rem;color:var(--text-mid);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.note}</span>` : '<span style="flex:1"></span>'}
+                  <button class="btn-view-protocol" data-id="${a.id}"
+                    style="flex-shrink:0;padding:3px 9px;background:var(--cream-dark);border:none;border-radius:var(--radius-sm);font-size:0.72rem;cursor:pointer;white-space:nowrap">
+                    📋 Protokoll ansehen
+                  </button>
+                </div>
+              `}).join('')}
+            </div>
           </div>
         ` : ''}
 
@@ -1199,33 +1222,38 @@ export function TeamManagement({ user }) {
     `
   }
 
-  function buildConfirmedAppointmentsPanel() {
-    const confirmed = allAppointments.filter(a => a.status === 'confirmed')
-    if (!confirmed.length) return ''
+  function buildActiveAppointmentsPanel() {
+    const active = allAppointments.filter(a => a.status === 'confirmed' && !a.is_signed_off)
+    if (!active.length) return ''
 
-    const fmtDate = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }
+    const fmtDate = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) }
     const fmtTime = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
 
     return `
       <div class="card" style="margin-bottom:24px;border-left:4px solid #27AE60">
         <div class="card-header">
-          <h4>🗓️ Bestätigte Gesprächstermine</h4>
-          <span style="font-size:0.78rem;font-weight:700;color:#27AE60">${confirmed.length} bestätigt</span>
+          <h4>🗓️ Anstehende Gesprächstermine</h4>
+          <span style="font-size:0.78rem;font-weight:700;color:#27AE60">${active.length} aktiv</span>
         </div>
         <div style="padding:0 16px">
-          ${confirmed.map(a => {
+          ${active.map(a => {
             const emp = employees.find(e => e.id === a.employee_id)
+            const signOffBadge = a.protocol_text
+              ? `<span style="font-size:0.7rem;font-weight:700;color:#E67E22;background:rgba(230,126,34,0.12);padding:2px 7px;border-radius:var(--radius-sm);white-space:nowrap">⏳ Sign-Off ausstehend</span>`
+              : ''
             return `
               <div style="padding:12px 0;border-bottom:1px solid var(--cream-dark)">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
                   <div>
-                    <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${emp?.full_name ?? '–'}</div>
-                    <div style="font-size:0.8rem;color:var(--text-mid)">📅 ${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''} · ${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                      <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${emp?.full_name ?? '–'}</div>
+                      ${signOffBadge}
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-mid);margin-top:2px">📅 ${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' um ' + fmtTime(a.scheduled_date) : ''} · ${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
                     ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
-                    ${a.is_signed_off ? `<div style="font-size:0.72rem;color:#27AE60;font-weight:600;margin-top:3px">✓ Mitarbeiter hat Protokoll bestätigt</div>` : ''}
                   </div>
                   ${a.type === 'online' && a.meet_link ? `
-                    <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:4px 10px;font-size:0.75rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet</a>
+                    <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:4px 10px;font-size:0.75rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet beitreten</a>
                   ` : ''}
                 </div>
                 <div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">
@@ -1248,6 +1276,96 @@ export function TeamManagement({ user }) {
         </div>
       </div>
     `
+  }
+
+  function buildArchivedAppointmentsPanel() {
+    const archived = allAppointments.filter(a => a.status === 'confirmed' && a.is_signed_off)
+    if (!archived.length) return ''
+
+    const fmtDt = d => {
+      if (!d) return '–'
+      const dt = new Date(d)
+      if (isNaN(dt)) return '–'
+      const h = dt.getHours(), m = dt.getMinutes()
+      const time = (!h && !m) ? '' : ' um ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0')
+      return dt.toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric', year: '2-digit' }) + time
+    }
+
+    const needsScroll = archived.length > 3
+
+    return `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-header">
+          <h4>📂 Gesprächshistorie</h4>
+          <span style="font-size:0.78rem;color:var(--text-light)">${archived.length} archiviert</span>
+        </div>
+        <div style="${needsScroll ? 'max-height:220px;overflow-y:auto;' : ''}padding:0 16px">
+          ${archived.map(a => {
+            const emp = employees.find(e => e.id === a.employee_id)
+            return `
+              <div style="padding:7px 0;border-bottom:1px solid var(--cream);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="font-size:0.78rem;color:var(--text-light);flex-shrink:0">${fmtDt(a.scheduled_date)}</span>
+                <span style="font-size:0.82rem;font-weight:600;color:var(--aubergine)">${emp?.full_name ?? '–'}</span>
+                ${a.note ? `<span style="font-size:0.75rem;color:var(--text-light);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.note}</span>` : '<span style="flex:1"></span>'}
+                <button class="btn-view-protocol" data-id="${a.id}"
+                  style="flex-shrink:0;padding:3px 10px;background:var(--cream-dark);border:none;border-radius:var(--radius-sm);font-size:0.75rem;cursor:pointer;white-space:nowrap">
+                  📋 Protokoll ansehen
+                </button>
+              </div>
+            `
+          }).join('')}
+        </div>
+      </div>
+    `
+  }
+
+  function openProtocolViewModal(apptId) {
+    const a   = allAppointments.find(x => x.id === apptId)
+    const emp = employees.find(e => e.id === a?.employee_id)
+    if (!a) return
+
+    const fmtDt = d => {
+      if (!d) return '–'
+      const dt = new Date(d)
+      if (isNaN(dt)) return '–'
+      const h = dt.getHours(), m = dt.getMinutes()
+      const time = (!h && !m) ? '' : ' um ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr'
+      return dt.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + time
+    }
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:520px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0;flex-shrink:0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${emp?.full_name ?? '–'}</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${fmtDt(a.scheduled_date)} · ${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
+          </div>
+          <button id="pv-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:16px">
+          ${a.protocol_text ? `
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll & Fazit</div>
+              <div style="font-size:0.88rem;color:var(--text-mid);white-space:pre-wrap;line-height:1.6;background:rgba(61,43,53,0.04);padding:10px 12px;border-radius:var(--radius-sm)">${a.protocol_text}</div>
+            </div>
+          ` : '<div style="font-size:0.85rem;color:var(--text-light)">Kein Protokoll vorhanden.</div>'}
+          ${a.transcript_text ? `
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Meeting-Transkript</div>
+              <div style="font-size:0.82rem;color:var(--text-mid);white-space:pre-wrap;line-height:1.5;font-family:monospace;background:rgba(61,43,53,0.04);padding:10px 12px;border-radius:var(--radius-sm);max-height:200px;overflow-y:auto">${a.transcript_text}</div>
+            </div>
+          ` : ''}
+        </div>
+        <div style="padding:0 20px 18px;flex-shrink:0">
+          <div style="font-size:0.72rem;color:#27AE60;font-weight:600">✓ Mitarbeiter hat dieses Protokoll bestätigt</div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+    overlay.querySelector('#pv-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
   }
 
   function buildListScheduleForm() {
@@ -1310,6 +1428,11 @@ export function TeamManagement({ user }) {
                 style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
             </label>
           </div>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Agenda-Notiz (optional)
+            <textarea id="lsf-note" rows="2" placeholder="Gesprächsthema, Agenda-Punkte, Vorbereitung..."
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;resize:none;font-family:inherit"></textarea>
+          </label>
           <button id="lsf-submit" class="btn btn-accent"
             style="width:100%;justify-content:center;padding:14px;font-size:0.9rem;font-weight:700;letter-spacing:0.02em">
             📅 + TERMIN VERBINDLICH EINTRAGEN
@@ -1339,7 +1462,9 @@ export function TeamManagement({ user }) {
 
       ${buildPendingAppointmentsPanel()}
 
-      ${buildConfirmedAppointmentsPanel()}
+      ${buildActiveAppointmentsPanel()}
+
+      ${buildArchivedAppointmentsPanel()}
 
       ${buildHoursTable()}
 
@@ -1465,6 +1590,10 @@ export function TeamManagement({ user }) {
 
     container.querySelectorAll('.btn-confirm-emp-req[data-id]').forEach(btn => {
       btn.addEventListener('click', () => openConfirmAppointmentModal(btn.dataset.id))
+    })
+
+    container.querySelectorAll('.btn-view-protocol[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => openProtocolViewModal(btn.dataset.id))
     })
 
     container.querySelectorAll('.btn-save-protocol[data-id]').forEach(btn => {
@@ -1607,6 +1736,11 @@ export function TeamManagement({ user }) {
       badge.addEventListener('click', e => { e.stopPropagation(); tip ? hide() : show() })
     })
 
+    // List view: view archived protocol
+    container.querySelectorAll('.btn-view-protocol[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => openProtocolViewModal(btn.dataset.id))
+    })
+
     // List view: confirmed appointments protocol save
     container.querySelectorAll('.lsf-save-protocol[data-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1648,6 +1782,7 @@ export function TeamManagement({ user }) {
       const empId    = container.querySelector('#lsf-employee')?.value
       const date     = container.querySelector('#lsf-date')?.value
       const time     = container.querySelector('#lsf-time')?.value || null
+      const note     = container.querySelector('#lsf-note')?.value.trim() || null
       const location = lsfSelectedType === 'offline' ? (container.querySelector('#lsf-location')?.value || null) : null
       const meetLink = lsfSelectedType === 'online'  ? (container.querySelector('#lsf-meet')?.value.trim() || null) : null
 
@@ -1673,6 +1808,7 @@ export function TeamManagement({ user }) {
         type:           lsfSelectedType,
         location,
         meet_link:      meetLink,
+        note:           note || null,
         status:         'confirmed',
         initiated_by:   user.id,
         performance_snapshot,

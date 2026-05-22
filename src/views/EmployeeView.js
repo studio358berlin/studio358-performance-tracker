@@ -163,9 +163,10 @@ export function EmployeeView({ user, onNavigate }) {
 
     const pendingInvites    = appointments.filter(a => a.status === 'pending_employee' && a.initiated_by !== user.id)
     const myPendingRequests = appointments.filter(a => a.status === 'pending_manager'  && a.initiated_by === user.id)
-    const confirmed         = appointments.filter(a => a.status === 'confirmed')
+    const activeAppts       = appointments.filter(a => a.status === 'confirmed' && !a.is_signed_off)
+    const archivedAppts     = appointments.filter(a => a.status === 'confirmed' && a.is_signed_off)
 
-    const isEmpty = !pendingInvites.length && !myPendingRequests.length && !confirmed.length
+    const isEmpty = !pendingInvites.length && !myPendingRequests.length && !activeAppts.length && !archivedAppts.length
 
     return `
       <div class="card" style="margin-bottom:24px">
@@ -208,10 +209,10 @@ export function EmployeeView({ user, onNavigate }) {
           </div>
         ` : ''}
 
-        ${confirmed.length > 0 ? `
+        ${activeAppts.length > 0 ? `
           <div style="padding:12px 16px 4px">
-            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">Bestätigte Termine</div>
-            ${confirmed.map(a => `
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#27AE60;margin-bottom:8px">🗓️ Bestätigte Termine</div>
+            ${activeAppts.map(a => `
               <div style="padding:10px 0;border-bottom:1px solid var(--cream)">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
                   <div>
@@ -227,20 +228,40 @@ export function EmployeeView({ user, onNavigate }) {
                   ` : ''}
                 </div>
                 ${a.protocol_text ? `
-                  <div style="margin-top:10px;background:rgba(61,43,53,0.04);border-radius:var(--radius-sm);padding:10px 12px;border-left:3px solid var(--aubergine)">
-                    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll</div>
+                  <div style="margin-top:10px;background:rgba(61,43,53,0.04);border-radius:var(--radius-sm);padding:10px 12px;border-left:3px solid #E67E22">
+                    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll verfügbar</div>
                     <div style="font-size:0.85rem;color:var(--text-mid);white-space:pre-wrap">${a.protocol_text}</div>
-                    ${a.is_signed_off
-                      ? `<div style="margin-top:8px;font-size:0.75rem;color:#27AE60;font-weight:600">✓ Du hast dieses Protokoll bestätigt</div>`
-                      : `<button class="btn-signoff-protocol" data-id="${a.id}"
-                          style="margin-top:10px;width:100%;padding:10px 14px;background:#27AE60;color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:700;cursor:pointer;line-height:1.4;text-align:center">
-                          ✓ Ich habe das Gesprächsprotokoll gelesen und bestätige es
-                        </button>`
-                    }
+                    <button class="btn-signoff-protocol" data-id="${a.id}"
+                      style="margin-top:10px;width:100%;padding:11px 14px;background:#E67E22;color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:700;cursor:pointer;line-height:1.4;text-align:center">
+                      ⚠ Bitte Protokoll & Transkript lesen und bestätigen
+                    </button>
                   </div>
                 ` : ''}
               </div>
             `).join('')}
+          </div>
+        ` : ''}
+
+        ${archivedAppts.length > 0 ? `
+          <div style="padding:10px 16px 4px">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">📂 Gesprächshistorie</div>
+            <div style="${archivedAppts.length > 3 ? 'max-height:200px;overflow-y:auto;' : ''}">
+              ${archivedAppts.map(a => {
+                const fmtDt = d => { if (!d) return '–'; const dt = new Date(d); if (isNaN(dt)) return '–'; const h = dt.getHours(), m = dt.getMinutes(); const t = (!h && !m) ? '' : ' · ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'); return dt.toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric', year: '2-digit' }) + t }
+                return `
+                <div style="padding:6px 0;border-bottom:1px solid var(--cream);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:0.75rem;color:var(--text-light);flex-shrink:0">${fmtDt(a.scheduled_date)}</span>
+                  ${a.note ? `<span style="font-size:0.75rem;color:var(--text-mid);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.note}</span>` : '<span style="flex:1"></span>'}
+                  ${a.protocol_text ? `
+                    <button class="btn-view-protocol-emp" data-id="${a.id}"
+                      style="flex-shrink:0;padding:3px 9px;background:var(--cream-dark);border:none;border-radius:var(--radius-sm);font-size:0.72rem;cursor:pointer;white-space:nowrap">
+                      📋 Protokoll ansehen
+                    </button>
+                  ` : ''}
+                  <span style="font-size:0.7rem;color:#27AE60;font-weight:600;white-space:nowrap;flex-shrink:0">✓ Bestätigt</span>
+                </div>
+              `}).join('')}
+            </div>
           </div>
         ` : ''}
 
@@ -314,6 +335,55 @@ export function EmployeeView({ user, onNavigate }) {
       await loadData()
       rerender()
     })
+  }
+
+  function openProtocolViewModalEmp(apptId) {
+    const a = appointments.find(x => x.id === apptId)
+    if (!a) return
+
+    const fmtDt = d => {
+      if (!d) return '–'
+      const dt = new Date(d)
+      if (isNaN(dt)) return '–'
+      const h = dt.getHours(), m = dt.getMinutes()
+      const time = (!h && !m) ? '' : ' um ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr'
+      return dt.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + time
+    }
+    const fmtLoc = l => ({ mitte: 'Studio Mitte', kadewe: 'KaDeWe' }[l] ?? l ?? '–')
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:480px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0;flex-shrink:0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Gesprächsprotokoll</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${fmtDt(a.scheduled_date)} · ${a.type === 'online' ? '🌐 Online' : '📍 ' + fmtLoc(a.location)}</div>
+          </div>
+          <button id="pv-emp-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:16px">
+          ${a.protocol_text ? `
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll & Fazit</div>
+              <div style="font-size:0.88rem;color:var(--text-mid);white-space:pre-wrap;line-height:1.6;background:rgba(61,43,53,0.04);padding:10px 12px;border-radius:var(--radius-sm)">${a.protocol_text}</div>
+            </div>
+          ` : '<div style="font-size:0.85rem;color:var(--text-light)">Kein Protokoll vorhanden.</div>'}
+          ${a.transcript_text ? `
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Meeting-Transkript</div>
+              <div style="font-size:0.82rem;color:var(--text-mid);white-space:pre-wrap;line-height:1.5;font-family:monospace;background:rgba(61,43,53,0.04);padding:10px 12px;border-radius:var(--radius-sm);max-height:180px;overflow-y:auto">${a.transcript_text}</div>
+            </div>
+          ` : ''}
+        </div>
+        <div style="padding:0 20px 18px;flex-shrink:0">
+          <div style="font-size:0.75rem;color:#27AE60;font-weight:600">✓ Du hast dieses Protokoll bestätigt</div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+    overlay.querySelector('#pv-emp-close').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
   }
 
   function buildHTML() {
@@ -514,12 +584,16 @@ export function EmployeeView({ user, onNavigate }) {
           .update({ is_signed_off: true }).eq('id', btn.dataset.id)
         if (error) {
           showToast('Fehler: ' + error.message, 'error')
-          btn.disabled = false; btn.textContent = '✓ Ich habe das Gesprächsprotokoll gelesen und bestätige es'
+          btn.disabled = false; btn.textContent = '⚠ Bitte Protokoll & Transkript lesen und bestätigen'
           return
         }
         showToast('Protokoll bestätigt!')
         await loadData(); rerender()
       })
+    })
+
+    container.querySelectorAll('.btn-view-protocol-emp[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => openProtocolViewModalEmp(btn.dataset.id))
     })
 
     container.querySelectorAll('.btn-copy-meet[data-link]').forEach(btn => {
