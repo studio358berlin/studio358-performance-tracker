@@ -159,7 +159,7 @@ export function EmployeeView({ user, onNavigate }) {
   function buildAppointmentsSection() {
     const fmtDate = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) }
     const fmtTime = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
-    const fmtLoc  = l => ({ mitte: 'Berlin Mitte', kadewe: 'KaDeWe' }[l] ?? l ?? '–')
+    const fmtLoc  = l => ({ mitte: 'Studio Mitte', kadewe: 'KaDeWe' }[l] ?? l ?? '–')
 
     const pendingInvites    = appointments.filter(a => a.status === 'pending_employee' && a.initiated_by !== user.id)
     const myPendingRequests = appointments.filter(a => a.status === 'pending_manager'  && a.initiated_by === user.id)
@@ -270,8 +270,10 @@ export function EmployeeView({ user, onNavigate }) {
             <input id="na-date" type="date" min="${today}" value="${today}" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
-            Wunschuhrzeit (optional)
-            <input id="na-time" type="time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
+            Wunschuhrzeit
+            <select id="na-time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine);background:var(--white)">
+              ${(()=>{let o='<option value="">– Keine Uhrzeit –</option>';for(let h=8;h<=21;h++){const hh=String(h).padStart(2,'0');o+=`<option value="${hh}:00">${hh}:00 Uhr</option>`;if(h<21)o+=`<option value="${hh}:30">${hh}:30 Uhr</option>`;}return o;})()}
+            </select>
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
             Notiz (optional)

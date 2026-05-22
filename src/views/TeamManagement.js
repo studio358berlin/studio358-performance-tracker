@@ -402,7 +402,7 @@ export function TeamManagement({ user }) {
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Standort
               <select id="msc-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
-                <option value="mitte">Berlin Mitte</option>
+                <option value="mitte">Studio Mitte</option>
                 <option value="kadewe">KaDeWe</option>
               </select>
             </label>
@@ -421,9 +421,10 @@ export function TeamManagement({ user }) {
                 style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine)">
             </label>
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
-              Uhrzeit (optional)
-              <input id="msc-time" type="time"
-                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine)">
+              Uhrzeit
+              <select id="msc-time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine);background:var(--white)">
+                ${buildTimeOptions()}
+              </select>
             </label>
           </div>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
@@ -465,7 +466,7 @@ export function TeamManagement({ user }) {
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Standort
               <select id="ca-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
-                <option value="mitte">Berlin Mitte</option>
+                <option value="mitte">Studio Mitte</option>
                 <option value="kadewe">KaDeWe</option>
               </select>
             </label>
@@ -559,7 +560,7 @@ export function TeamManagement({ user }) {
             <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
               Standort
               <select id="ma-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
-                <option value="mitte">Berlin Mitte</option>
+                <option value="mitte">Studio Mitte</option>
                 <option value="kadewe">KaDeWe</option>
               </select>
             </label>
@@ -575,8 +576,10 @@ export function TeamManagement({ user }) {
             <input id="ma-date" type="date" min="${today}" value="${today}" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
-            Uhrzeit (optional)
-            <input id="ma-time" type="time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;color:var(--aubergine)">
+            Uhrzeit
+            <select id="ma-time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine);background:var(--white)">
+              ${buildTimeOptions()}
+            </select>
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
             Notiz (optional)
@@ -866,7 +869,7 @@ export function TeamManagement({ user }) {
               <label class="form-label">Location</label>
               <select class="form-select" name="location" required>
                 <option value="">– wählen –</option>
-                <option value="mitte">Berlin Mitte</option>
+                <option value="mitte">Studio Mitte</option>
                 <option value="kadewe">KaDeWe</option>
               </select>
             </div>
@@ -1196,6 +1199,126 @@ export function TeamManagement({ user }) {
     `
   }
 
+  function buildConfirmedAppointmentsPanel() {
+    const confirmed = allAppointments.filter(a => a.status === 'confirmed')
+    if (!confirmed.length) return ''
+
+    const fmtDate = d => { if (!d) return '–'; const dt = new Date(d); return isNaN(dt) ? '–' : dt.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }
+    const fmtTime = d => { if (!d) return null; const dt = new Date(d); if (isNaN(dt)) return null; const h = dt.getHours(), m = dt.getMinutes(); if (!h && !m) return null; return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' Uhr' }
+
+    return `
+      <div class="card" style="margin-bottom:24px;border-left:4px solid #27AE60">
+        <div class="card-header">
+          <h4>🗓️ Bestätigte Gesprächstermine</h4>
+          <span style="font-size:0.78rem;font-weight:700;color:#27AE60">${confirmed.length} bestätigt</span>
+        </div>
+        <div style="padding:0 16px">
+          ${confirmed.map(a => {
+            const emp = employees.find(e => e.id === a.employee_id)
+            return `
+              <div style="padding:12px 0;border-bottom:1px solid var(--cream-dark)">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+                  <div>
+                    <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${emp?.full_name ?? '–'}</div>
+                    <div style="font-size:0.8rem;color:var(--text-mid)">📅 ${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''} · ${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
+                    ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:2px">${a.note}</div>` : ''}
+                    ${a.is_signed_off ? `<div style="font-size:0.72rem;color:#27AE60;font-weight:600;margin-top:3px">✓ Mitarbeiter hat Protokoll bestätigt</div>` : ''}
+                  </div>
+                  ${a.type === 'online' && a.meet_link ? `
+                    <a href="${a.meet_link}" target="_blank" rel="noopener" style="background:#1a73e8;color:#fff;border-radius:var(--radius-sm);padding:4px 10px;font-size:0.75rem;font-weight:600;text-decoration:none;white-space:nowrap;flex-shrink:0">📹 Meet</a>
+                  ` : ''}
+                </div>
+                <div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">
+                  <label style="font-size:0.78rem;font-weight:600;color:var(--text-mid)">Gesprächsprotokoll & Fazit</label>
+                  <textarea class="lsf-protocol-ta" data-id="${a.id}" rows="2"
+                    placeholder="Gesprächsprotokoll, Vereinbarungen, nächste Schritte..."
+                    style="width:100%;padding:7px 9px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.8rem;resize:vertical;font-family:inherit;box-sizing:border-box">${a.protocol_text || ''}</textarea>
+                  <label style="font-size:0.78rem;font-weight:600;color:var(--text-mid)">Google Meet Transkript / Meeting-Notizen</label>
+                  <textarea class="lsf-transcript-ta" data-id="${a.id}" rows="2"
+                    placeholder="Transkript oder Notizen hier einfügen..."
+                    style="width:100%;padding:7px 9px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.8rem;resize:vertical;font-family:inherit;box-sizing:border-box">${a.transcript_text || ''}</textarea>
+                  <button class="lsf-save-protocol" data-id="${a.id}"
+                    style="align-self:flex-start;padding:6px 16px;background:var(--aubergine);color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.8rem;font-weight:600;cursor:pointer">
+                    Protokoll speichern
+                  </button>
+                </div>
+              </div>
+            `
+          }).join('')}
+        </div>
+      </div>
+    `
+  }
+
+  function buildListScheduleForm() {
+    const today      = localDate()
+    const empOptions = employees.map(e => `<option value="${e.id}">${e.full_name}</option>`).join('')
+
+    return `
+      <div class="card" style="margin-bottom:24px;border-left:4px solid var(--aubergine)">
+        <div class="card-header">
+          <h4>📅 Feedback-Gespräch ansetzen</h4>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Mitarbeiter
+              <select id="lsf-employee" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine);background:var(--white)">
+                <option value="">– Mitarbeiter wählen –</option>
+                ${empOptions}
+              </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Datum
+              <input id="lsf-date" type="date" min="${today}" value="${today}"
+                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine)">
+            </label>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Uhrzeit
+            <select id="lsf-time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine);background:var(--white)">
+              ${buildTimeOptions()}
+            </select>
+          </label>
+          <div>
+            <div style="font-size:0.8rem;font-weight:700;color:var(--text-mid);margin-bottom:6px">Format</div>
+            <div style="display:flex;gap:8px">
+              <button type="button" id="lsf-type-offline"
+                style="flex:1;padding:9px 12px;border:2px solid var(--aubergine);border-radius:var(--radius-sm);background:var(--aubergine);color:#fff;font-weight:600;font-size:0.85rem;cursor:pointer">
+                📍 Offline
+              </button>
+              <button type="button" id="lsf-type-online"
+                style="flex:1;padding:9px 12px;border:2px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);color:var(--text-mid);font-size:0.85rem;cursor:pointer">
+                🌐 Online
+              </button>
+            </div>
+          </div>
+          <div id="lsf-field-location">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Standort
+              <select id="lsf-location" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white);color:var(--aubergine)">
+                <option value="kadewe">KaDeWe</option>
+                <option value="mitte">Studio Mitte</option>
+              </select>
+            </label>
+          </div>
+          <div id="lsf-field-meet" style="display:none">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+              Google Meet Link
+              <input id="lsf-meet" type="url" value="https://meet.google.com/studio358-workspace"
+                placeholder="https://meet.google.com/..."
+                style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;color:var(--aubergine)">
+            </label>
+          </div>
+          <button id="lsf-submit" class="btn btn-accent"
+            style="width:100%;justify-content:center;padding:14px;font-size:0.9rem;font-weight:700;letter-spacing:0.02em">
+            📅 + TERMIN VERBINDLICH EINTRAGEN
+          </button>
+        </div>
+      </div>
+    `
+  }
+
   function buildListHTML() {
     return `
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -1210,17 +1333,21 @@ export function TeamManagement({ user }) {
 
       <div class="location-tabs">
         <button class="location-tab ${activeLocation === 'all'    ? 'active' : ''}" data-loc="all">Alle</button>
-        <button class="location-tab ${activeLocation === 'mitte'  ? 'active' : ''}" data-loc="mitte">Mitte</button>
+        <button class="location-tab ${activeLocation === 'mitte'  ? 'active' : ''}" data-loc="mitte">Studio Mitte</button>
         <button class="location-tab ${activeLocation === 'kadewe' ? 'active' : ''}" data-loc="kadewe">KaDeWe</button>
       </div>
 
       ${buildPendingAppointmentsPanel()}
+
+      ${buildConfirmedAppointmentsPanel()}
 
       ${buildHoursTable()}
 
       <div class="card">
         <div id="team-table-area"></div>
       </div>
+
+      ${buildListScheduleForm()}
     `
   }
 
@@ -1480,6 +1607,86 @@ export function TeamManagement({ user }) {
       badge.addEventListener('click', e => { e.stopPropagation(); tip ? hide() : show() })
     })
 
+    // List view: confirmed appointments protocol save
+    container.querySelectorAll('.lsf-save-protocol[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const apptId       = btn.dataset.id
+        const protocolText   = container.querySelector(`.lsf-protocol-ta[data-id="${apptId}"]`)?.value.trim() || null
+        const transcriptText = container.querySelector(`.lsf-transcript-ta[data-id="${apptId}"]`)?.value.trim() || null
+        btn.disabled = true; btn.textContent = 'Speichern...'
+        const { error } = await supabase.from('manager_appointments')
+          .update({ protocol_text: protocolText, transcript_text: transcriptText })
+          .eq('id', apptId)
+        if (error) { showToast('Fehler: ' + error.message, 'error'); btn.disabled = false; btn.textContent = 'Protokoll speichern'; return }
+        showToast('Protokoll gespeichert!')
+        btn.disabled = false; btn.textContent = 'Protokoll speichern'
+        await loadData(); rerender()
+      })
+    })
+
+    // List view: inline booking form
+    let lsfSelectedType = 'offline'
+    const lsfOfflineBtn = container.querySelector('#lsf-type-offline')
+    const lsfOnlineBtn  = container.querySelector('#lsf-type-online')
+    const lsfFieldLoc   = container.querySelector('#lsf-field-location')
+    const lsfFieldMeet  = container.querySelector('#lsf-field-meet')
+
+    function setLsfType(t) {
+      lsfSelectedType = t
+      const onBtn  = t === 'offline' ? lsfOfflineBtn : lsfOnlineBtn
+      const offBtn = t === 'offline' ? lsfOnlineBtn  : lsfOfflineBtn
+      onBtn.style.borderColor  = 'var(--aubergine)'; onBtn.style.background = 'var(--aubergine)'; onBtn.style.color = '#fff'; onBtn.style.fontWeight = '600'
+      offBtn.style.borderColor = 'var(--cream-dark)'; offBtn.style.background = 'var(--white)'; offBtn.style.color = 'var(--text-mid)'; offBtn.style.fontWeight = '400'
+      if (lsfFieldLoc)  lsfFieldLoc.style.display  = t === 'offline' ? '' : 'none'
+      if (lsfFieldMeet) lsfFieldMeet.style.display = t === 'online'  ? '' : 'none'
+    }
+
+    lsfOfflineBtn?.addEventListener('click', () => setLsfType('offline'))
+    lsfOnlineBtn?.addEventListener('click',  () => setLsfType('online'))
+
+    container.querySelector('#lsf-submit')?.addEventListener('click', async e => {
+      const empId    = container.querySelector('#lsf-employee')?.value
+      const date     = container.querySelector('#lsf-date')?.value
+      const time     = container.querySelector('#lsf-time')?.value || null
+      const location = lsfSelectedType === 'offline' ? (container.querySelector('#lsf-location')?.value || null) : null
+      const meetLink = lsfSelectedType === 'online'  ? (container.querySelector('#lsf-meet')?.value.trim() || null) : null
+
+      if (!empId)  { showToast('Bitte wähle einen Mitarbeiter.', 'error'); return }
+      if (!date)   { showToast('Bitte wähle ein Datum.', 'error'); return }
+      if (!time)   { showToast('Bitte wähle eine Uhrzeit.', 'error'); return }
+      if (lsfSelectedType === 'online' && !meetLink) { showToast('Bitte gib einen Google Meet Link ein.', 'error'); return }
+
+      const btn = e.currentTarget
+      btn.disabled = true; btn.textContent = 'Speichern...'
+
+      // Performance snapshot
+      const snapEmp   = employees.find(em => em.id === empId)
+      const snapEvals = getEvals(empId).filter(ev => ev.manager_scores && Object.keys(ev.manager_scores).length > 0)
+      const snapPi    = snapEvals[0] ? calculatePerformance(mapEntryToEngine(snapEvals[0], snapEmp?.level || 'junior', snapEmp)).PI_Monat : null
+      const snapHours = employeeHours.filter(h => h.employee_id === empId).reduce((s, h) => s + Math.max(0, h.hours_worked - (h.break_minutes || 0) / 60), 0)
+      const performance_snapshot = { pi_monat: snapPi, hours_month: Math.round(snapHours * 10) / 10, captured_at: new Date().toISOString() }
+
+      const { error } = await supabase.from('manager_appointments').insert({
+        employee_id:    empId,
+        manager_id:     user.id,
+        scheduled_date: `${date}T${time}:00`,
+        type:           lsfSelectedType,
+        location,
+        meet_link:      meetLink,
+        status:         'confirmed',
+        initiated_by:   user.id,
+        performance_snapshot,
+      })
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        btn.disabled = false; btn.textContent = '📅 + TERMIN VERBINDLICH EINTRAGEN'
+        return
+      }
+      showToast(`Termin für ${snapEmp?.full_name ?? '–'} verbindlich eingetragen!`)
+      await loadData(); rerender()
+    })
+
     const tableArea = container.querySelector('#team-table-area')
     if (tableArea) {
       const table = TeamTable({
@@ -1524,7 +1731,17 @@ function localDate() {
 }
 
 function locationLabel(loc) {
-  return { mitte: 'Mitte', kadewe: 'KaDeWe' }[loc] ?? loc ?? '–'
+  return { mitte: 'Studio Mitte', kadewe: 'KaDeWe' }[loc] ?? loc ?? '–'
+}
+
+function buildTimeOptions(selected = '') {
+  let o = `<option value="">– Uhrzeit wählen –</option>`
+  for (let h = 8; h <= 21; h++) {
+    const hh = String(h).padStart(2, '0')
+    o += `<option value="${hh}:00" ${selected === hh + ':00' ? 'selected' : ''}>${hh}:00 Uhr</option>`
+    if (h < 21) o += `<option value="${hh}:30" ${selected === hh + ':30' ? 'selected' : ''}>${hh}:30 Uhr</option>`
+  }
+  return o
 }
 
 function fmtHours(mins) {
