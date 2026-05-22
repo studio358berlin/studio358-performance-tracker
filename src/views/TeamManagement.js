@@ -433,7 +433,7 @@ export function TeamManagement({ user }) {
           </label>
           <button id="msc-submit" class="btn btn-accent" data-emp="${emp.id}"
             style="width:100%;justify-content:center;padding:14px;font-size:0.88rem;font-weight:700;letter-spacing:0.02em">
-            📅 + FEEDBACK-TERMIN VERBINDLICH SETZEN
+            📅 + TERMIN VERBINDLICH EINTRAGEN
           </button>
         </div>
       </div>
@@ -633,7 +633,7 @@ export function TeamManagement({ user }) {
         location,
         meet_link:      meetLink,
         note:           note || null,
-        status:         'pending_employee',
+        status:         'confirmed',
         initiated_by:   user.id,
       })
 
@@ -642,7 +642,7 @@ export function TeamManagement({ user }) {
         btn.disabled = false; btn.textContent = 'Einladung senden'
         return
       }
-      showToast('Einladung gesendet!')
+      showToast('Termin verbindlich eingetragen!')
       overlay.remove()
       await loadData()
       rerender()
@@ -712,7 +712,7 @@ export function TeamManagement({ user }) {
     const bonusBadgeColor = { Gold: 'var(--gold)', Silber: '#A0A0A0', Bronze: 'var(--terracotta)' }
 
     return `
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
         <button class="btn btn-ghost btn-sm" id="back-to-list">← Zurück</button>
         <h3 style="color:var(--aubergine)">${emp.full_name}</h3>
         <span class="badge ${emp.level === 'senior' ? 'badge-aubergine' : 'badge-gold'}">${emp.level}</span>
@@ -720,6 +720,8 @@ export function TeamManagement({ user }) {
         ${promotion.eligible ? `<span class="badge badge-success">⬆ Promotion-Ready</span>` : ''}
         ${piResult?.vetoAusgeloest ? `<span class="badge" style="background:var(--terracotta);color:#fff">⚠ Safety Veto</span>` : ''}
       </div>
+
+      ${buildManagerScheduleCard(emp)}
 
       <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
         <div class="stat-card">
@@ -801,8 +803,6 @@ export function TeamManagement({ user }) {
         </div>
         <div class="chart-container"><canvas id="team-detail-chart"></canvas></div>
       </div>
-
-      ${buildManagerScheduleCard(emp)}
 
       ${comparisonRow ? buildComparisonCard(comparisonRow, emp.level, {
           selfLabel:    'Selbsteinschätzung (Mitarbeiter)',
@@ -1321,17 +1321,17 @@ export function TeamManagement({ user }) {
         location,
         meet_link:      meetLink,
         note:           note || null,
-        status:         'pending_employee',
+        status:         'confirmed',
         initiated_by:   user.id,
         performance_snapshot,
       })
 
       if (error) {
         showToast('Fehler: ' + error.message, 'error')
-        btn.disabled = false; btn.textContent = '📅 + FEEDBACK-TERMIN VERBINDLICH SETZEN'
+        btn.disabled = false; btn.textContent = '+ TERMIN VERBINDLICH EINTRAGEN'
         return
       }
-      showToast(`Termin für ${employees.find(em => em.id === empId)?.full_name ?? '–'} gesendet!`)
+      showToast(`Termin für ${employees.find(em => em.id === empId)?.full_name ?? '–'} verbindlich eingetragen!`)
       await loadData()
       rerender()
     })
