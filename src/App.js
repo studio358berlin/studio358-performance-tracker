@@ -94,14 +94,15 @@ function renderApp(viewId) {
   contentWrap.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden'
 
   if (isMobile()) {
-    // ── Mobile: slim header bar (no hamburger) ─────────────────────────────
+    // ── Mobile: header with hamburger menu ────────────────────────────────
     const hdr = document.createElement('header')
     hdr.className = 'mobile-header'
     hdr.innerHTML = `
       <img src="/images/studio358-logo.png" class="mobile-header-logo" alt="">
       <span class="mobile-header-title">${viewName(viewId)}</span>
-      <div style="width:32px"></div>
+      <button class="mobile-hamburger" aria-label="Menü öffnen">☰</button>
     `
+    hdr.querySelector('.mobile-hamburger').addEventListener('click', openMobileMenu)
     contentWrap.appendChild(hdr)
   }
 
@@ -111,10 +112,7 @@ function renderApp(viewId) {
   viewContainer.style.cssText = 'flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch'
   contentWrap.appendChild(viewContainer)
 
-  if (isMobile()) {
-    // ── Mobile: bottom navigation bar ─────────────────────────────────────
-    contentWrap.appendChild(createBottomNav())
-  }
+  // Bottom-nav removed: navigation is now via hamburger overlay on mobile
 
   appLayout.appendChild(contentWrap)
   app.appendChild(appLayout)
@@ -179,6 +177,62 @@ function updateSidebar() {
   if (old) old.replaceWith(buildSidebar())
 }
 
+function openMobileMenu() {
+  if (document.getElementById('mobile-menu-overlay')) return   // prevent double-open
+
+  const overlay = document.createElement('div')
+  overlay.id = 'mobile-menu-overlay'
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:7000;display:flex;align-items:stretch'
+
+  const backdrop = document.createElement('div')
+  backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.52)'
+
+  const panel = document.createElement('div')
+  panel.style.cssText = [
+    'position:relative;z-index:1',
+    'width:280px;max-width:82vw;height:100%',
+    'display:flex;flex-direction:column;overflow-y:auto',
+    'box-shadow:4px 0 32px rgba(0,0,0,0.38)',
+    'transform:translateX(-100%)',
+    'transition:transform 0.26s cubic-bezier(0.4,0,0.2,1)',
+  ].join(';')
+
+  function close() {
+    panel.style.transform = 'translateX(-100%)'
+    setTimeout(() => overlay.remove(), 270)
+  }
+
+  function navAndClose(viewId) { close(); setTimeout(() => navigateTo(viewId), 140) }
+  function logoutAndClose()    { close(); setTimeout(handleLogout, 140) }
+
+  const sidebarEl = Sidebar({
+    user:       currentUser,
+    currentView,
+    onNavigate: navAndClose,
+    onLogout:   logoutAndClose,
+  }).render()
+
+  const closeBtn = document.createElement('button')
+  closeBtn.textContent = '✕'
+  closeBtn.style.cssText = [
+    'position:absolute;top:14px;right:14px;z-index:2',
+    'background:none;border:none',
+    'color:rgba(245,237,228,0.7);font-size:1.25rem',
+    'cursor:pointer;padding:6px;line-height:1;border-radius:4px',
+  ].join(';')
+  closeBtn.addEventListener('click', close)
+
+  panel.appendChild(sidebarEl)
+  panel.appendChild(closeBtn)
+  overlay.appendChild(backdrop)
+  overlay.appendChild(panel)
+  document.body.appendChild(overlay)
+
+  requestAnimationFrame(() => { panel.style.transform = 'translateX(0)' })
+
+  backdrop.addEventListener('click', close)
+}
+
 // ── View loader ────────────────────────────────────────────────────────────────
 
 async function loadView(viewId) {
@@ -238,11 +292,6 @@ function viewName(id) { return VIEW_NAMES[id] ?? 'Studio 358' }
 function navigateTo(viewId) {
   currentView = viewId
   updateSidebar()
-  // Update active state in bottom nav without full re-render
-  appLayout?.querySelectorAll('#bottom-nav .bottom-nav-item').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.view === viewId)
-  })
-  // Update mobile header title
   const hdrTitle = appLayout?.querySelector('.mobile-header-title')
   if (hdrTitle) hdrTitle.textContent = viewName(viewId)
   loadView(viewId)
