@@ -342,7 +342,10 @@ export function TeamManagement({ user }) {
                   <div>
                     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                       <div style="font-weight:600;font-size:0.9rem;color:var(--aubergine)">${fmtDate(a.scheduled_date)}${fmtTime(a.scheduled_date) ? ' · ' + fmtTime(a.scheduled_date) : ''}</div>
-                      ${a.protocol_text ? `<span style="font-size:0.7rem;font-weight:700;color:#E67E22;background:rgba(230,126,34,0.12);padding:2px 7px;border-radius:var(--radius-sm);white-space:nowrap">⏳ Sign-Off ausstehend</span>` : ''}
+                      ${a.protocol_text
+                        ? `<span style="font-size:0.7rem;font-weight:700;color:#DC2626;background:#FEE2E2;padding:2px 8px;border-radius:var(--radius-sm);white-space:nowrap;border:1px solid #FECACA">❗ Lesebestätigung steht aus</span>`
+                        : `<span style="font-size:0.7rem;color:var(--text-light);background:var(--cream-dark);padding:2px 7px;border-radius:var(--radius-sm);white-space:nowrap">Protokoll ausstehend</span>`
+                      }
                     </div>
                     <div style="font-size:0.78rem;color:var(--text-mid)">${a.type === 'online' ? '🌐 Online' : '📍 ' + locationLabel(a.location)}</div>
                     ${a.note ? `<div style="font-size:0.75rem;color:var(--text-light)">${a.note}</div>` : ''}
@@ -1239,8 +1242,8 @@ export function TeamManagement({ user }) {
           ${active.map(a => {
             const emp = employees.find(e => e.id === a.employee_id)
             const signOffBadge = a.protocol_text
-              ? `<span style="font-size:0.7rem;font-weight:700;color:#E67E22;background:rgba(230,126,34,0.12);padding:2px 7px;border-radius:var(--radius-sm);white-space:nowrap">⏳ Sign-Off ausstehend</span>`
-              : ''
+              ? `<span style="font-size:0.7rem;font-weight:700;color:#DC2626;background:#FEE2E2;padding:2px 8px;border-radius:var(--radius-sm);white-space:nowrap;border:1px solid #FECACA">❗ Lesebestätigung steht aus</span>`
+              : `<span style="font-size:0.7rem;color:var(--text-light);background:var(--cream-dark);padding:2px 7px;border-radius:var(--radius-sm);white-space:nowrap">Protokoll ausstehend</span>`
             return `
               <div style="padding:12px 0;border-bottom:1px solid var(--cream-dark)">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">

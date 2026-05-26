@@ -592,8 +592,18 @@ export function EmployeeView({ user, onNavigate }) {
           btn.disabled = false; btn.textContent = '✓ Ich habe das Gesprächsprotokoll und das Transkript gelesen und bestätige es'
           return
         }
+        // Green flash before data reload
+        btn.style.background = '#27AE60'
+        btn.style.borderColor = '#27AE60'
+        btn.textContent = '✓ Bestätigt!'
+        const parentBox = btn.closest('div[style*="border:2px solid"]')
+        if (parentBox) {
+          parentBox.style.borderColor = '#27AE60'
+          const header = parentBox.querySelector('div[style*="background:#E67E22"]')
+          if (header) header.style.background = '#27AE60'
+        }
         showToast('Protokoll bestätigt!')
-        await loadData(); rerender()
+        setTimeout(async () => { await loadData(); rerender() }, 700)
       })
     })
 
