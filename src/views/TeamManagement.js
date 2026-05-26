@@ -1306,6 +1306,7 @@ export function TeamManagement({ user }) {
               <div style="padding:7px 0;border-bottom:1px solid var(--cream);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <span style="font-size:0.78rem;color:var(--text-light);flex-shrink:0">${fmtDt(a.scheduled_date)}</span>
                 <span style="font-size:0.82rem;font-weight:600;color:var(--aubergine)">${emp?.full_name ?? '–'}</span>
+                <span style="font-size:0.7rem;color:#27AE60;font-weight:700;background:rgba(39,174,96,0.1);padding:1px 6px;border-radius:3px;flex-shrink:0;white-space:nowrap">✓ Bestätigt</span>
                 ${a.note ? `<span style="font-size:0.75rem;color:var(--text-light);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.note}</span>` : '<span style="flex:1"></span>'}
                 <button class="btn-view-protocol" data-id="${a.id}"
                   style="flex-shrink:0;padding:3px 10px;background:var(--cream-dark);border:none;border-radius:var(--radius-sm);font-size:0.75rem;cursor:pointer;white-space:nowrap">

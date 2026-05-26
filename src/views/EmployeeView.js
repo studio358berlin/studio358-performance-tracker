@@ -228,13 +228,18 @@ export function EmployeeView({ user, onNavigate }) {
                   ` : ''}
                 </div>
                 ${a.protocol_text ? `
-                  <div style="margin-top:10px;background:rgba(61,43,53,0.04);border-radius:var(--radius-sm);padding:10px 12px;border-left:3px solid #E67E22">
-                    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll verfügbar</div>
-                    <div style="font-size:0.85rem;color:var(--text-mid);white-space:pre-wrap">${a.protocol_text}</div>
-                    <button class="btn-signoff-protocol" data-id="${a.id}"
-                      style="margin-top:10px;width:100%;padding:11px 14px;background:#E67E22;color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.82rem;font-weight:700;cursor:pointer;line-height:1.4;text-align:center">
-                      ⚠ Bitte Protokoll & Transkript lesen und bestätigen
-                    </button>
+                  <div style="margin-top:12px;border-radius:var(--radius-md);border:2px solid #E67E22;overflow:hidden">
+                    <div style="background:#E67E22;padding:8px 14px;display:flex;align-items:center;gap:6px">
+                      <span style="font-size:0.8rem;font-weight:700;color:#fff;letter-spacing:0.04em">⚠ LESEBESTÄTIGUNG ERFORDERLICH</span>
+                    </div>
+                    <div style="padding:10px 14px;background:rgba(230,126,34,0.06)">
+                      <div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--aubergine);margin-bottom:6px">Gesprächsprotokoll</div>
+                      <div style="font-size:0.85rem;color:var(--text-mid);white-space:pre-wrap;line-height:1.55">${a.protocol_text}</div>
+                      <button class="btn-signoff-protocol" data-id="${a.id}"
+                        style="margin-top:14px;width:100%;padding:13px 14px;background:#E67E22;color:#fff;border:none;border-radius:var(--radius-sm);font-size:0.84rem;font-weight:700;cursor:pointer;line-height:1.4;text-align:center;letter-spacing:0.01em">
+                        ✓ Ich habe das Gesprächsprotokoll und das Transkript gelesen und bestätige es
+                      </button>
+                    </div>
                   </div>
                 ` : ''}
               </div>
@@ -584,7 +589,7 @@ export function EmployeeView({ user, onNavigate }) {
           .update({ is_signed_off: true }).eq('id', btn.dataset.id)
         if (error) {
           showToast('Fehler: ' + error.message, 'error')
-          btn.disabled = false; btn.textContent = '⚠ Bitte Protokoll & Transkript lesen und bestätigen'
+          btn.disabled = false; btn.textContent = '✓ Ich habe das Gesprächsprotokoll und das Transkript gelesen und bestätige es'
           return
         }
         showToast('Protokoll bestätigt!')
