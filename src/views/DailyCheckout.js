@@ -171,7 +171,11 @@ export function DailyCheckout({ user, onNavigate }) {
     const isNoShow   = !!data.is_no_show
     const upsell     = isNoShow ? 0 : Math.max(0, Number(data.upsell_amount) || 0)
     const tip        = isNoShow ? 0 : Math.max(0, Number(data.tip) || 0)
-    const revenue    = isNoShow ? 0 : (Number(treatment?.price ?? 0) + upsell)
+    const revenue    = isNoShow ? 0 : (
+      data._overrideRevenue !== undefined
+        ? Math.max(0, Number(data._overrideRevenue)) + upsell
+        : Number(treatment?.price ?? 0) + upsell
+    )
     const employeeId = data.employee_id ?? user.id
 
     const payload = {
@@ -204,7 +208,7 @@ export function DailyCheckout({ user, onNavigate }) {
         const emp = employees.find(e => e.id === employeeId) ?? { full_name: user.profile?.full_name }
         const enriched = {
           ...res.data,
-          treatment: { name: treatment?.name, price: treatment?.price },
+          treatment: { name: data._customTreatmentName ?? treatment?.name, price: treatment?.price ?? 0 },
           employee:  { full_name: emp.full_name },
         }
         todayLogs = [enriched, ...todayLogs]
@@ -632,7 +636,7 @@ export function DailyCheckout({ user, onNavigate }) {
     { value: 'gutschein', label: 'Gutschein'    },
   ]
 
-  function openModal(treatment, existingLog = null) {
+  function openModal(treatment, existingLog = null, isCustom = false) {
     const overlay = document.createElement('div')
     overlay.style.position        = 'fixed'
     overlay.style.top             = '0'
@@ -656,12 +660,22 @@ export function DailyCheckout({ user, onNavigate }) {
 
     let activeTreatment = treatment ?? {}
     const availableTreats = locationTreatments()
+    const currentLocName  = (selectedLocationId && selectedLocationId !== 'all')
+      ? (locations.find(l => l.id === selectedLocationId)?.name ?? null)
+      : null
+    const filteredByLoc   = currentLocName
+      ? employees.filter(e => (e.assigned_studios ?? []).includes(currentLocName))
+      : employees
+    const modalEmployees  = filteredByLoc.length ? filteredByLoc : employees
 
     overlay.innerHTML = `
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:420px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
 
         <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
-          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${isEdit ? 'Eintrag bearbeiten' : (activeTreatment.name ?? 'Behandlung')}</h3>
+          ${isCustom
+            ? `<div style="flex:1"><div style="font-size:0.72rem;color:var(--text-light);margin-bottom:3px">Behandlungsname</div><input id="modal-custom-name" type="text" placeholder="Sonstige" maxlength="80" style="width:100%;background:transparent;border:none;border-bottom:2px solid var(--aubergine);outline:none;font-size:1.05rem;font-weight:700;color:var(--aubergine);padding:0 0 3px;font-family:inherit"></div>`
+            : `<h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${isEdit ? 'Eintrag bearbeiten' : (activeTreatment.name ?? 'Behandlung')}</h3>`
+          }
           <button id="modal-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-light);line-height:1;padding:4px">✕</button>
         </div>
 
@@ -676,16 +690,20 @@ export function DailyCheckout({ user, onNavigate }) {
 
         <div style="margin:8px 20px 0;display:flex;justify-content:space-between;align-items:center;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px">
           <span style="font-size:0.85rem;color:var(--text-mid)">Behandlungspreis</span>
-          <strong id="modal-price-val" style="color:var(--aubergine);font-size:1.05rem">${fmt(activeTreatment.price ?? 0)}</strong>
+          ${isCustom
+            ? `<input id="modal-custom-price" type="number" min="0" step="0.01" placeholder="0.00" style="background:transparent;border:none;border-bottom:2px solid var(--aubergine);outline:none;font-size:1.05rem;font-weight:700;color:var(--aubergine);text-align:right;width:110px;padding:0 0 2px;font-family:inherit">`
+            : `<strong id="modal-price-val" style="color:var(--aubergine);font-size:1.05rem">${fmt(activeTreatment.price ?? 0)}</strong>`
+          }
         </div>
 
         <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px">
 
-          ${isManager && employees.length ? `
+          ${isManager ? `
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
-            Mitarbeiter zuordnen
+            Durchgeführt von <span style="color:var(--terracotta);font-weight:700">*</span>
             <select id="modal-employee" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;background:var(--white)">
-              ${employees.map(e => `<option value="${e.id}" ${e.id === curEmpId ? 'selected' : ''}>${e.full_name}</option>`).join('')}
+              <option value="">– Mitarbeiter wählen –</option>
+              ${modalEmployees.map(e => `<option value="${e.id}" ${e.id === curEmpId ? 'selected' : ''}>${e.full_name}</option>`).join('')}
             </select>
           </label>
           ` : ''}
@@ -744,7 +762,7 @@ export function DailyCheckout({ user, onNavigate }) {
           </label>
 
           <div style="font-size:0.8rem;color:var(--text-light);text-align:right">
-            Umsatz: <strong id="modal-rev-val">${fmt(isEdit ? existingLog.revenue : (activeTreatment.price ?? 0))}</strong>
+            Umsatz: <strong id="modal-rev-val">${fmt(isEdit ? existingLog.revenue : (isCustom ? 0 : (activeTreatment.price ?? 0)))}</strong>
           </div>
         </div>
 
@@ -769,7 +787,9 @@ export function DailyCheckout({ user, onNavigate }) {
     const splitAmt1    = overlay.querySelector('#split-amt-1')
     const splitAmt2    = overlay.querySelector('#split-amt-2')
     const splitMethod2 = overlay.querySelector('#split-method-2')
-    let splitActive    = !!existingLog?.payment_method_2
+    let splitActive        = !!existingLog?.payment_method_2
+    const customNameInput  = overlay.querySelector('#modal-custom-name')
+    const customPriceInput = overlay.querySelector('#modal-custom-price')
 
     treatSelect?.addEventListener('change', () => {
       activeTreatment = availableTreats.find(t => t.id === treatSelect.value) ?? activeTreatment
@@ -805,7 +825,9 @@ export function DailyCheckout({ user, onNavigate }) {
     function updatePreview() {
       const ns    = nsCheckbox.checked
       const u     = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
-      const price = activeTreatment.price ?? 0
+      const price = isCustom
+        ? Math.max(0, parseFloat(customPriceInput?.value) || 0)
+        : (activeTreatment.price ?? 0)
       revVal.textContent = fmt(ns ? 0 : (price + u))
       upsellInput.style.opacity       = ns ? '0.4' : '1'
       upsellInput.style.pointerEvents = ns ? 'none' : ''
@@ -819,10 +841,13 @@ export function DailyCheckout({ user, onNavigate }) {
     upsellInput.addEventListener('input', updatePreview)
 
     function getTotalForSplit() {
-      const ns = nsCheckbox.checked
+      const ns    = nsCheckbox.checked
       if (ns) return 0
-      const u = Math.max(0, parseFloat(upsellInput.value) || 0)
-      return (activeTreatment.price ?? 0) + u
+      const u     = Math.max(0, parseFloat(upsellInput.value) || 0)
+      const price = isCustom
+        ? Math.max(0, parseFloat(customPriceInput?.value) || 0)
+        : (activeTreatment.price ?? 0)
+      return price + u
     }
 
     function autoCalcAmt2() {
@@ -848,6 +873,8 @@ export function DailyCheckout({ user, onNavigate }) {
     splitAmt1?.addEventListener('input', autoCalcAmt2)
     upsellInput.addEventListener('input', autoCalcAmt2)
     nsCheckbox.addEventListener('change', autoCalcAmt2)
+    customPriceInput?.addEventListener('input', updatePreview)
+    customPriceInput?.addEventListener('input', autoCalcAmt2)
 
     if (splitActive && splitSection) {
       splitSection.style.display    = 'block'
@@ -868,14 +895,22 @@ export function DailyCheckout({ user, onNavigate }) {
         alert('Bitte wähle eine Zahlungsart (Bar, EC, PayPal...) aus, bevor du speicherst!')
         return
       }
+      const rawEmpId = overlay.querySelector('#modal-employee')?.value
+      if (isManager && !rawEmpId) {
+        showToast('Bitte wähle eine Mitarbeiterin aus.', 'error')
+        return
+      }
+      const empId = rawEmpId || user.id
       const ns    = nsCheckbox.checked
       const u     = ns ? 0 : Math.max(0, parseFloat(upsellInput.value) || 0)
       const t     = ns ? 0 : Math.max(0, parseFloat(tipInput.value) || 0)
-      const empId = overlay.querySelector('#modal-employee')?.value ?? user.id
 
       if (u < 0 || t < 0) { showToast('Keine negativen Beträge.', 'error'); return }
 
-      const totalRev = ns ? 0 : (activeTreatment.price ?? 0) + u
+      const customName  = isCustom ? (customNameInput?.value.trim() || 'Sonstige') : undefined
+      const customPrice = isCustom ? Math.max(0, parseFloat(customPriceInput?.value) || 0) : undefined
+      const basePrice   = isCustom ? customPrice : (activeTreatment.price ?? 0)
+      const totalRev    = ns ? 0 : basePrice + u
       let splitM2 = null, splitA1 = totalRev, splitA2 = 0
       if (splitActive) {
         splitM2 = splitMethod2?.value || null
@@ -900,15 +935,17 @@ export function DailyCheckout({ user, onNavigate }) {
       saveBtnEl.textContent = 'Speichern...'
 
       const ok = await saveLog({
-        treatment_id:     activeTreatment.id,
-        upsell_amount:    u,
-        tip:              t,
-        is_no_show:       ns,
-        payment_method:   selectedPayment,
-        employee_id:      empId,
-        payment_method_2: splitM2,
-        amount_method_1:  splitA1,
-        amount_method_2:  splitA2,
+        treatment_id:         isCustom ? null : activeTreatment.id,
+        _customTreatmentName: customName,
+        _overrideRevenue:     customPrice,
+        upsell_amount:        u,
+        tip:                  t,
+        is_no_show:           ns,
+        payment_method:       selectedPayment,
+        employee_id:          empId,
+        payment_method_2:     splitM2,
+        amount_method_1:      splitA1,
+        amount_method_2:      splitA2,
       }, existingLog?.id)
 
       if (ok) overlay.remove()
@@ -1115,8 +1152,13 @@ export function DailyCheckout({ user, onNavigate }) {
             <span class="empty-state-icon">◉</span>
             <p style="color:var(--text-mid)">Für das Erfassen bitte einen konkreten Standort auswählen.</p>
           </div>
-        ` : treatsHere.length ? `
+        ` : `
           <div class="treatment-grid">
+            <button id="btn-custom-treatment"
+              style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:var(--radius-md);border:2px solid var(--aubergine);background:var(--cream);cursor:pointer;width:100%;transition:all 0.15s;text-align:left">
+              <span style="font-weight:700;color:var(--aubergine);font-size:0.85rem;line-height:1.3">+ Eigene Behandlung erfassen</span>
+              <span style="font-size:0.75rem;color:var(--text-mid)">Individueller Name und Preis</span>
+            </button>
             ${treatsHere.map(t => `
               <button class="btn-treatment" data-id="${t.id}"
                 style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:var(--radius-md);border:2px solid var(--cream-dark);background:var(--white);cursor:pointer;width:100%;transition:all 0.15s;text-align:left">
@@ -1125,15 +1167,13 @@ export function DailyCheckout({ user, onNavigate }) {
               </button>
             `).join('')}
           </div>
-        ` : `
-          <div class="empty-state" style="padding:32px 20px">
-            <span class="empty-state-icon">◉</span>
-            <p>Noch keine Behandlungen für diesen Standort.</p>
-            ${isManager
-              ? `<p style="margin-top:8px;font-size:0.82rem;color:var(--text-light)">Lege Behandlungen im <button id="goto-admin" class="btn btn-ghost btn-sm" style="display:inline;padding:2px 6px">Studio-Admin</button> an.</p>`
-              : `<p style="margin-top:8px;font-size:0.82rem;color:var(--text-light)">Bitte den Manager, Behandlungen anzulegen.</p>`
-            }
-          </div>
+          ${!treatsHere.length ? `
+            <div style="padding:8px 16px 14px">
+              <p style="font-size:0.82rem;color:var(--text-light)">Noch keine Standard-Behandlungen für diesen Standort.${isManager
+                ? ` Lege sie im <button id="goto-admin" class="btn btn-ghost btn-sm" style="display:inline;padding:2px 6px">Studio-Admin</button> an.`
+                : ' Bitte den Manager, Behandlungen anzulegen.'}</p>
+            </div>
+          ` : ''}
         `}
       </div>
 
@@ -1285,6 +1325,8 @@ export function DailyCheckout({ user, onNavigate }) {
       period = 'today'
       await refreshDay()
     })
+
+    container.querySelector('#btn-custom-treatment')?.addEventListener('click', () => openModal({}, null, true))
 
     container.querySelectorAll('.btn-treatment[data-id]').forEach(btn => {
       btn.addEventListener('pointerenter', () => { btn.style.borderColor = 'var(--aubergine)'; btn.style.background = 'var(--cream)' })
