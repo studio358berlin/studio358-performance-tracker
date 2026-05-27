@@ -389,14 +389,6 @@ export function StudioAdmin({ user }) {
   }
 
   function buildStaffPanel() {
-    if (!isAdmin) {
-      return `
-        <div class="card" style="padding:32px 24px;text-align:center">
-          <p style="color:var(--text-mid);font-size:0.9rem">Kein Zugang. Dieser Bereich ist nur für Administratoren sichtbar.</p>
-        </div>
-      `
-    }
-
     const roleOptions = [
       { value: 'admin',    label: 'Admin'    },
       { value: 'manager',  label: 'Manager'  },
@@ -466,7 +458,7 @@ export function StudioAdmin({ user }) {
         <button class="location-tab ${activeTab === 'locations'  ? 'active' : ''}" data-tab="locations">Standorte</button>
         <button class="location-tab ${activeTab === 'skills'     ? 'active' : ''}" data-tab="skills">Skills</button>
         <button class="location-tab ${activeTab === 'reports'    ? 'active' : ''}" data-tab="reports">Monatsberichte</button>
-        ${isAdmin ? `<button class="location-tab ${activeTab === 'staff' ? 'active' : ''}" data-tab="staff">Mitarbeiter-Verwaltung</button>` : ''}
+        <button class="location-tab ${activeTab === 'staff'      ? 'active' : ''}" data-tab="staff">Mitarbeiter-Verwaltung</button>
       </div>
 
       ${activeTab === 'treatments' ? buildTreatmentsPanel()
@@ -683,7 +675,6 @@ export function StudioAdmin({ user }) {
     container.querySelectorAll('.location-tab[data-tab]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const tab = btn.dataset.tab
-        if (tab === 'staff' && !isAdmin) return
         activeTab        = tab
         editingTreatment = undefined
         editingLocation  = undefined
