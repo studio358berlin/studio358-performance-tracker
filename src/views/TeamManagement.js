@@ -9,8 +9,14 @@ import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 
 export function TeamManagement({ user }) {
   const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
-  const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
-  const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+  const mgrStudios    = user?.profile?.role === 'manager' ? (user?.profile?.assigned_studios ?? []) : null
+  const forcedLocSlug = mgrStudios?.length === 1 ? (STUDIO_SLUG[mgrStudios[0]] ?? null) : null
+
+  function isEmpVisible(emp) {
+    if (!mgrStudios)        return true
+    if (!mgrStudios.length) return true
+    return mgrStudios.some(s => (emp.assigned_studios ?? []).includes(s))
+  }
 
   let employees      = []
   let evaluations    = []
@@ -32,9 +38,7 @@ export function TeamManagement({ user }) {
     const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
 
     const [empRes, evalRes, logsRes, hoursRes, targetsRes, skillsRes, empSkillsRes, apptsRes] = await Promise.all([
-      forcedLocSlug
-        ? supabase.from('profiles').select('*').eq('role', 'employee').eq('location', forcedLocSlug).order('full_name')
-        : supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
+      supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
@@ -50,7 +54,7 @@ export function TeamManagement({ user }) {
         .or(`manager_id.eq.${user.id},status.eq.pending_manager,status.eq.pending_employee`)
         .order('scheduled_date', { ascending: false }),
     ])
-    employees     = empRes.data  ?? []
+    employees     = (empRes.data ?? []).filter(isEmpVisible)
     evaluations   = evalRes.data ?? []
     employeeHours = hoursRes.data   ?? []
     monthlyTargets = targetsRes.data ?? []

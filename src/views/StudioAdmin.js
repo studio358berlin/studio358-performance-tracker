@@ -145,11 +145,12 @@ export function StudioAdmin({ user }) {
     await loadStaffData(); rerender()
   }
 
-  async function updateHomeStudio(profileId, homeStudio) {
-    const { error } = await supabase.from('profiles').update({ home_studio: homeStudio || null }).eq('id', profileId)
-    if (error) { showToast('Fehler: ' + error.message, 'error'); await loadStaffData(); rerender(); return }
-    showToast('Stammstudio aktualisiert.')
-    await loadStaffData(); rerender()
+  async function updateAssignedStudios(profileId, studios) {
+    const { error } = await supabase.from('profiles').update({ assigned_studios: studios }).eq('id', profileId)
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+    showToast('Studios aktualisiert.')
+    const p = staffProfiles.find(x => x.id === profileId)
+    if (p) p.assigned_studios = studios
   }
 
   function confirmDeleteProfile(profileId) {
@@ -347,11 +348,7 @@ export function StudioAdmin({ user }) {
       { value: 'manager',  label: 'Manager'  },
       { value: 'employee', label: 'Employee' },
     ]
-    const studioOptions = [
-      { value: '',           label: '-- Kein Stammstudio --' },
-      { value: 'KaDeWe',    label: 'KaDeWe'                 },
-      { value: 'Studio Mitte', label: 'Studio Mitte'        },
-    ]
+    const STUDIOS = ['KaDeWe', 'Studio Mitte']
 
     if (!staffProfiles.length) {
       return `<div class="empty-state" style="padding:48px 20px"><p>Noch keine Mitarbeiterprofile vorhanden.</p></div>`
@@ -367,7 +364,7 @@ export function StudioAdmin({ user }) {
                 <th>Name</th>
                 <th>E-Mail</th>
                 <th>Aktuelle Rolle</th>
-                <th>Stammstudio</th>
+                <th>Studios</th>
                 <th style="text-align:center">Aktion</th>
               </tr>
             </thead>
@@ -382,16 +379,23 @@ export function StudioAdmin({ user }) {
                     </select>
                   </td>
                   <td>
-                    <select class="staff-studio-select" data-id="${p.id}" style="${selectStyle}">
-                      ${studioOptions.map(s => `<option value="${s.value}" ${(p.home_studio ?? '') === s.value ? 'selected' : ''}>${s.label}</option>`).join('')}
-                    </select>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap">
+                      ${STUDIOS.map(studio => `
+                        <label style="display:flex;align-items:center;gap:5px;font-size:0.83rem;cursor:pointer;white-space:nowrap;user-select:none">
+                          <input type="checkbox" class="studio-check" data-profile="${p.id}" data-studio="${studio}"
+                            ${(p.assigned_studios ?? []).includes(studio) ? 'checked' : ''}
+                            style="width:14px;height:14px;accent-color:var(--aubergine)">
+                          ${studio}
+                        </label>
+                      `).join('')}
+                    </div>
                   </td>
                   <td style="text-align:center">
                     <button
                       class="staff-delete-btn btn btn-sm"
                       data-id="${p.id}"
                       style="background:var(--terracotta);color:#fff;font-size:0.78rem;padding:5px 12px;border:none;border-radius:var(--radius-sm);cursor:pointer"
-                    >Löschen</button>
+                    >[ Löschen ]</button>
                   </td>
                 </tr>
               `).join('')}
@@ -726,9 +730,19 @@ export function StudioAdmin({ user }) {
       sel.addEventListener('change', () => updateRole(sel.dataset.id, sel.value))
     })
 
-    // Staff: home_studio change
-    container.querySelectorAll('.staff-studio-select[data-id]').forEach(sel => {
-      sel.addEventListener('change', () => updateHomeStudio(sel.dataset.id, sel.value))
+    // Staff: assigned_studios checkboxes
+    container.querySelectorAll('.studio-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const profileId = cb.dataset.profile
+        const profile   = staffProfiles.find(p => p.id === profileId)
+        if (!profile) return
+        const studio  = cb.dataset.studio
+        const current = profile.assigned_studios ?? []
+        const updated = cb.checked
+          ? [...new Set([...current, studio])]
+          : current.filter(s => s !== studio)
+        updateAssignedStudios(profileId, updated)
+      })
     })
 
     // Staff: delete

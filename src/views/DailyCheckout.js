@@ -1,7 +1,16 @@
 import { supabase } from '../lib/supabase.js'
 
 export function DailyCheckout({ user, onNavigate }) {
-  const isManager = user?.profile?.is_manager || user?.profile?.role === 'manager'
+  const isManager     = user?.profile?.is_manager || user?.profile?.role === 'manager'
+  const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
+  const mgrStudios    = user?.profile?.role === 'manager' ? (user?.profile?.assigned_studios ?? []) : null
+  const forcedLocSlug = mgrStudios?.length === 1 ? (STUDIO_SLUG[mgrStudios[0]] ?? null) : null
+
+  function isEmpVisible(emp) {
+    if (!mgrStudios)        return true
+    if (!mgrStudios.length) return true
+    return mgrStudios.some(s => (emp.assigned_studios ?? []).includes(s))
+  }
 
   let locations          = []
   let treatments         = []
@@ -29,10 +38,6 @@ export function DailyCheckout({ user, onNavigate }) {
   // ── Data loading ──────────────────────────────────────────────────────────────
 
   async function loadData() {
-    const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
-    const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
-    const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
-
     // Phase 1: locations + treatments (must resolve before fetching logs)
     const [locRes, treatRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
@@ -56,13 +61,13 @@ export function DailyCheckout({ user, onNavigate }) {
     // Phase 2: logs + employees in parallel (selectedLocationId now resolved)
     const phase2 = [fetchTodayLogs()]
     if (isManager) {
-      let empQ = supabase.from('profiles').select('id,full_name').eq('role', 'employee').order('full_name')
-      if (forcedLocSlug) empQ = empQ.eq('location', forcedLocSlug)
-      phase2.push(empQ)
+      phase2.push(
+        supabase.from('profiles').select('id,full_name,assigned_studios').eq('role', 'employee').order('full_name')
+      )
     }
     const [logRes, empRes] = await Promise.all(phase2)
     todayLogs = logRes
-    if (isManager) employees = empRes?.data ?? []
+    if (isManager) employees = (empRes?.data ?? []).filter(isEmpVisible)
 
     // Load working-hours entries for the selected date
     const todayDate = dateFrom

@@ -4,8 +4,14 @@ import { supabase } from '../lib/supabase.js'
 
 export function RevenueAnalytics({ user }) {
   const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
-  const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
-  const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+  const mgrStudios    = user?.profile?.role === 'manager' ? (user?.profile?.assigned_studios ?? []) : null
+  const forcedLocSlug = mgrStudios?.length === 1 ? (STUDIO_SLUG[mgrStudios[0]] ?? null) : null
+
+  function isEmpVisible(prof) {
+    if (!mgrStudios)        return true
+    if (!mgrStudios.length) return true
+    return mgrStudios.some(s => (prof.assigned_studios ?? []).includes(s))
+  }
 
   let locations   = []
   let logs        = []
@@ -40,23 +46,22 @@ export function RevenueAnalytics({ user }) {
   async function loadData() {
     const [locRes, profRes, treatRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
-      supabase.from('profiles').select('id, full_name, location_id').eq('is_manager', false),
+      supabase.from('profiles').select('id, full_name, location_id, assigned_studios').eq('is_manager', false),
       supabase.from('treatments').select('id, name, duration').order('name'),
     ])
     locations  = locRes.data  ?? []
     profiles   = profRes.data ?? []
     treatments = treatRes.data ?? []
 
-    // Manager studio filter: restrict to home_studio
-    if (forcedLocSlug) {
-      const studioLoc = locations.find(l => l.slug === forcedLocSlug)
-      if (studioLoc) {
-        profiles           = profiles.filter(p => p.location_id === studioLoc.id)
-        selectedLocationId = studioLoc.id
+    // Manager studio filter: restrict visible profiles via assigned_studios
+    if (mgrStudios?.length) {
+      profiles = profiles.filter(isEmpVisible)
+      if (forcedLocSlug) {
+        const studioLoc = locations.find(l => l.slug === forcedLocSlug)
+        if (studioLoc) selectedLocationId = studioLoc.id
       }
-    } else if (!selectedLocationId) {
-      selectedLocationId = 'all'
     }
+    if (!selectedLocationId) selectedLocationId = 'all'
     await Promise.all([loadLogs(), loadTarget(), loadHours(), loadTopServices()])
   }
 

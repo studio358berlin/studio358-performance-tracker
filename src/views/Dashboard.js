@@ -12,8 +12,14 @@ import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 
 export function Dashboard({ user }) {
   const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
-  const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
-  const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+  const mgrStudios    = user?.profile?.role === 'manager' ? (user?.profile?.assigned_studios ?? []) : null
+  const forcedLocSlug = mgrStudios?.length === 1 ? (STUDIO_SLUG[mgrStudios[0]] ?? null) : null
+
+  function isEmpVisible(emp) {
+    if (!mgrStudios)         return true
+    if (!mgrStudios.length)  return true
+    return mgrStudios.some(s => (emp.assigned_studios ?? []).includes(s))
+  }
 
   let employees   = []
   let evaluations = []
@@ -22,13 +28,11 @@ export function Dashboard({ user }) {
   let container = null
 
   async function loadData() {
-    let empQuery = supabase.from('profiles').select('*').eq('role', 'employee').order('full_name')
-    if (forcedLocSlug) empQuery = empQuery.eq('location', forcedLocSlug)
     const [empRes, evalRes] = await Promise.all([
-      empQuery,
+      supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
     ])
-    employees   = empRes.data  ?? []
+    employees   = (empRes.data ?? []).filter(isEmpVisible)
     evaluations = evalRes.data ?? []
   }
 
