@@ -3,11 +3,12 @@ import { supabase } from '../lib/supabase.js'
 export function StudioAdmin({ user }) {
   const isManager = user?.profile?.is_manager || user?.profile?.role === 'manager'
 
-  let locations       = []
-  let treatments      = []
-  let availableSkills = []
-  let activeTab       = 'treatments'  // 'treatments' | 'locations' | 'skills' | 'reports'
-  let container       = null
+  let locations        = []
+  let treatments       = []
+  let availableSkills  = []
+  let staffProfiles    = []
+  let activeTab        = 'treatments'  // 'treatments' | 'locations' | 'skills' | 'reports' | 'staff'
+  let container        = null
   let editingTreatment = undefined  // undefined=list view, null=new form, {obj}=edit form
   let editingLocation  = undefined
 
@@ -15,8 +16,8 @@ export function StudioAdmin({ user }) {
   const _now = new Date()
   let reportYear  = _now.getFullYear()
   let reportMonth = _now.getMonth() + 1  // 1–12
-  let reportLogs  = []   // daily_revenue_logs for selected month
-  let reportHours = []   // employee_daily_hours for selected month
+  let reportLogs  = []
+  let reportHours = []
 
   // ── Guard ────────────────────────────────────────────────────────────────────
   if (!isManager) {
@@ -41,6 +42,15 @@ export function StudioAdmin({ user }) {
     locations       = locRes.data    ?? []
     treatments      = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
     availableSkills = skillsRes.data ?? []
+  }
+
+  async function loadStaffData() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('full_name')
+    if (error) { showToast('Fehler beim Laden der Mitarbeiter: ' + error.message, 'error'); return }
+    staffProfiles = data ?? []
   }
 
   async function loadReportData() {
@@ -138,6 +148,80 @@ export function StudioAdmin({ user }) {
     showToast('Standort gelöscht.')
     await loadData()
     rerender()
+  }
+
+  // ── Staff management ──────────────────────────────────────────────────────────
+
+  async function updateRole(profileId, newRole) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', profileId)
+
+    if (error) {
+      showToast('Fehler beim Aktualisieren der Rolle: ' + error.message, 'error')
+      await loadStaffData()
+      rerender()
+      return
+    }
+    const roleLabel = { admin: 'Admin', manager: 'Manager', employee: 'Employee' }[newRole] ?? newRole
+    showToast(`Rolle erfolgreich zu ${roleLabel} geändert.`)
+    await loadStaffData()
+    rerender()
+  }
+
+  function confirmDeleteProfile(profileId) {
+    const ownId = user?.id ?? user?.profile?.id
+    if (profileId === ownId) {
+      showToast('Du kannst dein eigenes Profil nicht löschen.', 'error')
+      return
+    }
+    const profile = staffProfiles.find(p => p.id === profileId)
+    showDeleteModal(profile)
+  }
+
+  function showDeleteModal(profile) {
+    const existing = document.getElementById('staff-delete-modal')
+    if (existing) existing.remove()
+
+    const overlay = document.createElement('div')
+    overlay.id = 'staff-delete-modal'
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:9000',
+      'display:flex;align-items:center;justify-content:center',
+      'background:rgba(0,0,0,0.55)',
+    ].join(';')
+
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:28px 24px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
+        <h4 style="margin:0 0 10px;color:var(--aubergine);font-size:1.05rem">Mitarbeiter löschen?</h4>
+        <p style="margin:0 0 8px;color:var(--text-mid,#666);font-size:0.9rem;line-height:1.55">
+          Mitarbeiter wirklich löschen? Dadurch verliert die Person jeglichen Zugriff auf die App.
+        </p>
+        ${profile?.full_name ? `
+          <p style="margin:0 0 20px;font-size:0.9rem">
+            <strong style="color:var(--aubergine)">${profile.full_name}</strong> wird dauerhaft entfernt.
+          </p>
+        ` : '<div style="margin-bottom:20px"></div>'}
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button id="modal-cancel-btn" class="btn btn-ghost btn-sm">Abbrechen</button>
+          <button id="modal-confirm-btn" class="btn btn-sm" style="background:var(--terracotta);color:#fff">Löschen</button>
+        </div>
+      </div>
+    `
+
+    overlay.querySelector('#modal-cancel-btn').addEventListener('click', () => overlay.remove())
+    overlay.querySelector('#modal-confirm-btn').addEventListener('click', async () => {
+      overlay.remove()
+      const { error } = await supabase.from('profiles').delete().eq('id', profile.id)
+      if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+      showToast(`${profile?.full_name ?? 'Mitarbeiter'} wurde entfernt.`)
+      await loadStaffData()
+      rerender()
+    })
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    document.body.appendChild(overlay)
   }
 
   // ── CSV helpers ───────────────────────────────────────────────────────────────
@@ -304,6 +388,66 @@ export function StudioAdmin({ user }) {
     `
   }
 
+  function buildStaffPanel() {
+    const roleOptions = [
+      { value: 'admin',    label: 'Admin'    },
+      { value: 'manager',  label: 'Manager'  },
+      { value: 'employee', label: 'Employee' },
+    ]
+
+    if (!staffProfiles.length) {
+      return `
+        <div class="empty-state" style="padding:48px 20px">
+          <span class="empty-state-icon">👥</span>
+          <p>Noch keine Mitarbeiterprofile vorhanden.</p>
+        </div>
+      `
+    }
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h4>Alle Mitarbeiter (${staffProfiles.length})</h4>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>E-Mail</th>
+                <th>Aktuelle Rolle</th>
+                <th style="text-align:center">Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${staffProfiles.map(p => `
+                <tr>
+                  <td style="font-weight:600;color:var(--aubergine)">${p.full_name ?? '–'}</td>
+                  <td style="color:var(--text-mid);font-size:0.84rem">${p.email ?? '–'}</td>
+                  <td>
+                    <select class="staff-role-select" data-id="${p.id}" style="${selectStyle}">
+                      ${roleOptions.map(r => `
+                        <option value="${r.value}" ${(p.role ?? 'employee') === r.value ? 'selected' : ''}>${r.label}</option>
+                      `).join('')}
+                    </select>
+                  </td>
+                  <td style="text-align:center">
+                    <button
+                      class="staff-delete-btn btn btn-sm"
+                      data-id="${p.id}"
+                      title="Mitarbeiter entfernen"
+                      style="background:var(--terracotta);color:#fff;font-size:1rem;padding:4px 10px;line-height:1;border:none;border-radius:var(--radius-sm,6px);cursor:pointer"
+                    >🗑</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
+  }
+
   function buildHTML() {
     return `
       <div class="page-header">
@@ -316,11 +460,13 @@ export function StudioAdmin({ user }) {
         <button class="location-tab ${activeTab === 'locations'  ? 'active' : ''}" data-tab="locations">Standorte</button>
         <button class="location-tab ${activeTab === 'skills'     ? 'active' : ''}" data-tab="skills">Skills</button>
         <button class="location-tab ${activeTab === 'reports'    ? 'active' : ''}" data-tab="reports">Monatsberichte</button>
+        <button class="location-tab ${activeTab === 'staff'      ? 'active' : ''}" data-tab="staff">👥 Mitarbeiter-Verwaltung</button>
       </div>
 
       ${activeTab === 'treatments' ? buildTreatmentsPanel()
       : activeTab === 'locations'  ? buildLocationsPanel()
       : activeTab === 'skills'     ? buildSkillsPanel()
+      : activeTab === 'staff'      ? buildStaffPanel()
       : buildReportsPanel()}
     `
   }
@@ -485,11 +631,11 @@ export function StudioAdmin({ user }) {
         <!-- KPI row -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
           ${[
-            { label: 'Gesamtumsatz',   value: fmt(totalRevenue),      color: 'var(--aubergine)' },
-            { label: 'Trinkgeld',      value: fmt(totalTips),         color: '#27AE60'          },
-            { label: 'No-Show-Verlust',value: fmt(noShowLoss),        color: 'var(--terracotta)'},
-            { label: 'Netto-Stunden',  value: netWorkHours + ' Std.', color: 'var(--aubergine)' },
-            { label: 'Ø Auslastung',   value: avgUtil + '%',          color: utilColor          },
+            { label: 'Gesamtumsatz',    value: fmt(totalRevenue),      color: 'var(--aubergine)' },
+            { label: 'Trinkgeld',       value: fmt(totalTips),         color: '#27AE60'          },
+            { label: 'No-Show-Verlust', value: fmt(noShowLoss),        color: 'var(--terracotta)'},
+            { label: 'Netto-Stunden',   value: netWorkHours + ' Std.', color: 'var(--aubergine)' },
+            { label: 'Ø Auslastung',    value: avgUtil + '%',          color: utilColor          },
           ].map(k => `
             <div class="card" style="text-align:center;padding:16px">
               <div style="font-size:0.7rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">${k.label}</div>
@@ -544,6 +690,8 @@ export function StudioAdmin({ user }) {
         if (activeTab === 'reports') {
           container.innerHTML = buildHTML()
           await loadReportData()
+        } else if (activeTab === 'staff') {
+          await loadStaffData()
         }
         rerender()
       })
@@ -659,6 +807,16 @@ export function StudioAdmin({ user }) {
     })
     container.querySelector('#export-revenue-btn')?.addEventListener('click', downloadRevenueCsv)
     container.querySelector('#export-hours-btn')?.addEventListener('click',   downloadHoursCsv)
+
+    // Staff tab: role change
+    container.querySelectorAll('.staff-role-select[data-id]').forEach(sel => {
+      sel.addEventListener('change', () => updateRole(sel.dataset.id, sel.value))
+    })
+
+    // Staff tab: delete profile
+    container.querySelectorAll('.staff-delete-btn[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => confirmDeleteProfile(btn.dataset.id))
+    })
   }
 
   function rerender() {
@@ -682,7 +840,8 @@ export function StudioAdmin({ user }) {
   return { render }
 }
 
-const inputStyle = 'padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;width:100%'
+const inputStyle  = 'padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;width:100%'
+const selectStyle = 'padding:6px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;background:#fff;color:var(--aubergine);cursor:pointer;min-width:120px'
 
 function fmt(n) {
   return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
