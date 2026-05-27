@@ -245,6 +245,20 @@ export function StudioAdmin({ user }) {
     triggerDownload([header, ...rows, '', `GESAMTSUMME;;${sumBrutto.toFixed(2).replace('.', ',')} Std;${sumPause} Min;${sumNetto.toFixed(2).replace('.', ',')} Std`].join('\n'), `stunden_${reportYear}_${mm}.csv`)
   }
 
+  async function togglePunctual(hourId, currentValue) {
+    const newValue = !currentValue
+    const entry    = reportHours.find(h => h.id === hourId)
+    if (entry) entry.is_punctual = newValue
+    rerender()
+    const { error } = await supabase.from('employee_daily_hours')
+      .update({ is_punctual: newValue }).eq('id', hourId)
+    if (error) {
+      showToast('Fehler: ' + error.message, 'error')
+      if (entry) entry.is_punctual = currentValue
+      rerender()
+    }
+  }
+
   // ── HTML builders ─────────────────────────────────────────────────────────────
 
   function buildTreatmentForm(t = null) {
@@ -599,6 +613,50 @@ export function StudioAdmin({ user }) {
             `).join('')}
           </div>
         </div>
+        ${reportHours.length > 0 ? `
+          <div class="card" style="margin-top:20px">
+            <div class="card-header">
+              <h4>Tägliche Arbeitszeiten</h4>
+              <span style="font-size:0.78rem;color:var(--text-light)">${reportHours.length} Einträge</span>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Mitarbeiter</th>
+                    <th>Stunden</th>
+                    <th>Pünktlich</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${[...reportHours].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).map(h => {
+                    const date    = new Date(h.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })
+                    const empName = h.employee?.full_name ?? '–'
+                    const hw      = Number(h.hours_worked ?? 0)
+                    const hh      = Math.floor(hw)
+                    const mm      = Math.round((hw - hh) * 60)
+                    const hStr    = mm > 0 ? `${hh} Std. ${mm} Min.` : `${hh} Std.`
+                    const isPunct = h.is_punctual === true
+                    return `
+                      <tr>
+                        <td style="white-space:nowrap;color:var(--text-mid);font-size:0.82rem">${date}</td>
+                        <td style="font-weight:500;color:var(--aubergine)">${empName}</td>
+                        <td style="font-size:0.88rem">${hStr}</td>
+                        <td>
+                          <button class="btn-toggle-punctual" data-id="${h.id}" data-current="${isPunct}"
+                            style="border:none;background:none;cursor:pointer;font-size:0.88rem;font-weight:700;padding:3px 0;color:${isPunct ? '#27AE60' : 'var(--terracotta)'}">
+                            ${isPunct ? '[ Ja ]' : '[ Nein ]'}
+                          </button>
+                        </td>
+                      </tr>
+                    `
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : ''}
       `}
     `
   }
@@ -724,6 +782,9 @@ export function StudioAdmin({ user }) {
     })
     container.querySelector('#export-revenue-btn')?.addEventListener('click', downloadRevenueCsv)
     container.querySelector('#export-hours-btn')?.addEventListener('click',   downloadHoursCsv)
+    container.querySelectorAll('.btn-toggle-punctual[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => togglePunctual(btn.dataset.id, btn.dataset.current === 'true'))
+    })
 
     // Staff: role change
     container.querySelectorAll('.staff-role-select[data-id]').forEach(sel => {

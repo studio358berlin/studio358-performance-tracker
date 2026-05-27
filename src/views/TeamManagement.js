@@ -42,7 +42,7 @@ export function TeamManagement({ user }) {
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
-        .select('employee_id, date, hours_worked, break_minutes, location_id, is_modified, original_hours')
+        .select('employee_id, date, hours_worked, break_minutes, location_id, is_modified, original_hours, is_punctual')
         .gte('date', firstOfMonthStr),
       supabase.from('employee_monthly_targets')
         .select('employee_id, target_hours')
@@ -100,6 +100,29 @@ export function TeamManagement({ user }) {
 
   function getEvals(employeeId) {
     return evaluations.filter(e => e.employee_id === employeeId)
+  }
+
+  function calcPunctualityStats(empId) {
+    const entries  = employeeHours.filter(h => h.employee_id === empId && h.hours_worked > 0)
+    const total    = entries.length
+    const punctual = entries.filter(h => h.is_punctual === true).length
+    const late     = total - punctual
+    const pct      = total > 0 ? Math.round((punctual / total) * 100) : null
+    return { total, punctual, late, pct }
+  }
+
+  function buildPunctualityBlock(empId) {
+    const { total, punctual, late, pct } = calcPunctualityStats(empId)
+    const pctColor = pct === null ? 'var(--text-light)'
+      : pct >= 80 ? '#27AE60'
+      : pct >= 60 ? 'var(--gold)'
+      : 'var(--terracotta)'
+    return total > 0
+      ? `<div style="background:rgba(61,43,53,0.06);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px">
+           <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--aubergine);margin-bottom:4px">Pünktlichkeits-Statistik für diesen Monat</div>
+           <div style="font-size:0.9rem;font-weight:600;color:${pctColor}">${pct}% (${punctual} Tage pünktlich / ${late} Tage verspätet)</div>
+         </div>`
+      : `<div style="background:rgba(61,43,53,0.06);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:0.82rem;color:var(--text-light)">Noch keine Einträge für diesen Monat.</div>`
   }
 
   function showEvaluateModal(employeeId) {
@@ -365,6 +388,7 @@ export function TeamManagement({ user }) {
                   ` : ''}
                 </div>
                 <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                  ${buildPunctualityBlock(emp.id)}
                   <label style="font-size:0.8rem;font-weight:600;color:var(--text-mid)">Gesprächsprotokoll / Fazit</label>
                   <textarea class="appt-protocol-ta" data-id="${a.id}" rows="3"
                     placeholder="Gesprächsprotokoll, Vereinbarungen, nächste Schritte..."
@@ -421,6 +445,7 @@ export function TeamManagement({ user }) {
           <h4>📅 Performance-Gespräch ansetzen</h4>
         </div>
         <div style="display:flex;flex-direction:column;gap:14px">
+          ${buildPunctualityBlock(emp.id)}
           <div>
             <div style="font-size:0.8rem;font-weight:700;color:var(--text-mid);margin-bottom:6px">Format</div>
             <div style="display:flex;gap:8px">
@@ -1270,6 +1295,7 @@ export function TeamManagement({ user }) {
                   ` : ''}
                 </div>
                 <div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">
+                  ${buildPunctualityBlock(a.employee_id)}
                   <label style="font-size:0.78rem;font-weight:600;color:var(--text-mid)">Gesprächsprotokoll & Fazit</label>
                   <textarea class="lsf-protocol-ta" data-id="${a.id}" rows="2"
                     placeholder="Gesprächsprotokoll, Vereinbarungen, nächste Schritte..."
@@ -1406,6 +1432,7 @@ export function TeamManagement({ user }) {
                 style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine)">
             </label>
           </div>
+          <div id="lsf-punctuality-preview"></div>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
             Uhrzeit
             <select id="lsf-time" style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;color:var(--aubergine);background:var(--white)">
@@ -1574,10 +1601,11 @@ export function TeamManagement({ user }) {
       const snapEmp   = employees.find(em => em.id === empId)
       const snapEvals = getEvals(empId).filter(ev => ev.manager_scores && Object.keys(ev.manager_scores).length > 0)
       const snapPi    = snapEvals[0] ? calculatePerformance(mapEntryToEngine(snapEvals[0], snapEmp?.level || 'junior', snapEmp)).PI_Monat : null
-      const snapHours = employeeHours
+      const snapHours      = employeeHours
         .filter(h => h.employee_id === empId)
         .reduce((s, h) => s + Math.max(0, h.hours_worked - (h.break_minutes || 0) / 60), 0)
-      const performance_snapshot = { pi_monat: snapPi, hours_month: Math.round(snapHours * 10) / 10, captured_at: new Date().toISOString() }
+      const snapPunctStats  = calcPunctualityStats(empId)
+      const performance_snapshot = { pi_monat: snapPi, hours_month: Math.round(snapHours * 10) / 10, punctuality_pct: snapPunctStats.pct, captured_at: new Date().toISOString() }
 
       const { error } = await supabase.from('manager_appointments').insert({
         employee_id:    empId,
@@ -1812,8 +1840,9 @@ export function TeamManagement({ user }) {
       const snapEmp   = employees.find(em => em.id === empId)
       const snapEvals = getEvals(empId).filter(ev => ev.manager_scores && Object.keys(ev.manager_scores).length > 0)
       const snapPi    = snapEvals[0] ? calculatePerformance(mapEntryToEngine(snapEvals[0], snapEmp?.level || 'junior', snapEmp)).PI_Monat : null
-      const snapHours = employeeHours.filter(h => h.employee_id === empId).reduce((s, h) => s + Math.max(0, h.hours_worked - (h.break_minutes || 0) / 60), 0)
-      const performance_snapshot = { pi_monat: snapPi, hours_month: Math.round(snapHours * 10) / 10, captured_at: new Date().toISOString() }
+      const snapHours       = employeeHours.filter(h => h.employee_id === empId).reduce((s, h) => s + Math.max(0, h.hours_worked - (h.break_minutes || 0) / 60), 0)
+      const snapPunctStats  = calcPunctualityStats(empId)
+      const performance_snapshot = { pi_monat: snapPi, hours_month: Math.round(snapHours * 10) / 10, punctuality_pct: snapPunctStats.pct, captured_at: new Date().toISOString() }
 
       const { error } = await supabase.from('manager_appointments').insert({
         employee_id:    empId,
@@ -1835,6 +1864,24 @@ export function TeamManagement({ user }) {
       }
       showToast(`Termin für ${snapEmp?.full_name ?? '–'} verbindlich eingetragen!`)
       await loadData(); rerender()
+    })
+
+    container.querySelector('#lsf-employee')?.addEventListener('change', e => {
+      const empId   = e.target.value
+      const preview = container.querySelector('#lsf-punctuality-preview')
+      if (!preview) return
+      if (!empId) { preview.innerHTML = ''; return }
+      const { total, punctual, late, pct } = calcPunctualityStats(empId)
+      const pctColor = pct === null ? 'var(--text-light)'
+        : pct >= 80 ? '#27AE60'
+        : pct >= 60 ? 'var(--gold)'
+        : 'var(--terracotta)'
+      preview.innerHTML = total > 0
+        ? `<div style="background:rgba(61,43,53,0.06);border-radius:var(--radius-sm);padding:10px 14px">
+             <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--aubergine);margin-bottom:4px">Pünktlichkeits-Statistik für diesen Monat</div>
+             <div style="font-size:0.9rem;font-weight:600;color:${pctColor}">${pct}% (${punctual} Tage pünktlich / ${late} Tage verspätet)</div>
+           </div>`
+        : '<div style="background:rgba(61,43,53,0.06);border-radius:var(--radius-sm);padding:10px 14px;font-size:0.82rem;color:var(--text-light)">Noch keine Einträge für diesen Monat.</div>'
     })
 
     const tableArea = container.querySelector('#team-table-area')
