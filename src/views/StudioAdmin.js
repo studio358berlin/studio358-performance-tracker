@@ -1,7 +1,9 @@
 import { supabase } from '../lib/supabase.js'
 
 export function StudioAdmin({ user }) {
-  const isManager = user?.profile?.is_manager || user?.profile?.role === 'manager'
+  const role      = user?.profile?.role ?? ''
+  const isAdmin   = role === 'admin'
+  const isManager = user?.profile?.is_manager || role === 'manager' || isAdmin
 
   let locations        = []
   let treatments       = []
@@ -25,7 +27,7 @@ export function StudioAdmin({ user }) {
       render: async () => {
         const el = document.createElement('div')
         el.className = 'main-content'
-        el.innerHTML = '<div class="empty-state"><span class="empty-state-icon">⊘</span><p>Kein Zugang.</p></div>'
+        el.innerHTML = '<div class="empty-state"><p>Kein Zugang.</p></div>'
         return el
       }
     }
@@ -150,7 +152,7 @@ export function StudioAdmin({ user }) {
     rerender()
   }
 
-  // ── Staff management ──────────────────────────────────────────────────────────
+  // ── Staff management (Admin only) ─────────────────────────────────────────────
 
   async function updateRole(profileId, newRole) {
     const { error } = await supabase
@@ -164,8 +166,7 @@ export function StudioAdmin({ user }) {
       rerender()
       return
     }
-    const roleLabel = { admin: 'Admin', manager: 'Manager', employee: 'Employee' }[newRole] ?? newRole
-    showToast(`Rolle erfolgreich zu ${roleLabel} geändert.`)
+    showToast('Rolle erfolgreich aktualisiert.')
     await loadStaffData()
     rerender()
   }
@@ -360,7 +361,7 @@ export function StudioAdmin({ user }) {
         <div class="card-header"><h4>Neuen Skill erstellen</h4></div>
         <div style="padding:14px 16px;display:flex;gap:10px">
           <input id="skill-new-name" type="text" placeholder="Skill-Name (z. B. Shellac)" style="${inputStyle};flex:1">
-          <button id="skill-create-btn" class="btn btn-accent btn-sm" style="white-space:nowrap">+ Erstellen</button>
+          <button id="skill-create-btn" class="btn btn-accent btn-sm" style="white-space:nowrap">Erstellen</button>
         </div>
       </div>
 
@@ -372,15 +373,14 @@ export function StudioAdmin({ user }) {
               <div class="skill-item" data-id="${s.id}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--cream-dark);border-radius:var(--radius-sm)">
                 <span class="skill-item-label" style="font-size:0.9rem;color:var(--aubergine);font-weight:500">${s.name ?? s.id}</span>
                 <div style="display:flex;gap:6px">
-                  <button class="btn btn-ghost btn-sm btn-rename-skill" data-id="${s.id}" style="font-size:0.75rem;padding:3px 8px">✏ Umbenennen</button>
-                  <button class="btn btn-sm btn-delete-skill" data-id="${s.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">🗑 Löschen</button>
+                  <button class="btn btn-ghost btn-sm btn-rename-skill" data-id="${s.id}" style="font-size:0.75rem;padding:3px 8px">Umbenennen</button>
+                  <button class="btn btn-sm btn-delete-skill" data-id="${s.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">Löschen</button>
                 </div>
               </div>
             `).join('')}
           </div>
         ` : `
           <div class="empty-state" style="padding:32px 20px">
-            <span class="empty-state-icon">◉</span>
             <p>Noch keine Skills angelegt.</p>
           </div>
         `}
@@ -389,6 +389,14 @@ export function StudioAdmin({ user }) {
   }
 
   function buildStaffPanel() {
+    if (!isAdmin) {
+      return `
+        <div class="card" style="padding:32px 24px;text-align:center">
+          <p style="color:var(--text-mid);font-size:0.9rem">Kein Zugang. Dieser Bereich ist nur für Administratoren sichtbar.</p>
+        </div>
+      `
+    }
+
     const roleOptions = [
       { value: 'admin',    label: 'Admin'    },
       { value: 'manager',  label: 'Manager'  },
@@ -398,7 +406,6 @@ export function StudioAdmin({ user }) {
     if (!staffProfiles.length) {
       return `
         <div class="empty-state" style="padding:48px 20px">
-          <span class="empty-state-icon">👥</span>
           <p>Noch keine Mitarbeiterprofile vorhanden.</p>
         </div>
       `
@@ -435,9 +442,8 @@ export function StudioAdmin({ user }) {
                     <button
                       class="staff-delete-btn btn btn-sm"
                       data-id="${p.id}"
-                      title="Mitarbeiter entfernen"
-                      style="background:var(--terracotta);color:#fff;font-size:1rem;padding:4px 10px;line-height:1;border:none;border-radius:var(--radius-sm,6px);cursor:pointer"
-                    >🗑</button>
+                      style="background:var(--terracotta);color:#fff;font-size:0.78rem;padding:5px 12px;border:none;border-radius:var(--radius-sm,6px);cursor:pointer"
+                    >Löschen</button>
                   </td>
                 </tr>
               `).join('')}
@@ -452,7 +458,7 @@ export function StudioAdmin({ user }) {
     return `
       <div class="page-header">
         <h2>Studio-Admin</h2>
-        <p style="color:var(--text-light);font-size:0.875rem">Behandlungen, Standorte, Skills & Monatsberichte</p>
+        <p style="color:var(--text-light);font-size:0.875rem">Behandlungen, Standorte, Skills und Monatsberichte</p>
       </div>
 
       <div class="location-tabs" style="margin-bottom:24px">
@@ -460,7 +466,7 @@ export function StudioAdmin({ user }) {
         <button class="location-tab ${activeTab === 'locations'  ? 'active' : ''}" data-tab="locations">Standorte</button>
         <button class="location-tab ${activeTab === 'skills'     ? 'active' : ''}" data-tab="skills">Skills</button>
         <button class="location-tab ${activeTab === 'reports'    ? 'active' : ''}" data-tab="reports">Monatsberichte</button>
-        <button class="location-tab ${activeTab === 'staff'      ? 'active' : ''}" data-tab="staff">👥 Mitarbeiter-Verwaltung</button>
+        ${isAdmin ? `<button class="location-tab ${activeTab === 'staff' ? 'active' : ''}" data-tab="staff">Mitarbeiter-Verwaltung</button>` : ''}
       </div>
 
       ${activeTab === 'treatments' ? buildTreatmentsPanel()
@@ -477,7 +483,7 @@ export function StudioAdmin({ user }) {
 
       ${editingTreatment === undefined ? `
         <div style="margin-bottom:16px">
-          <button id="new-treatment-btn" class="btn btn-accent btn-sm">+ Behandlung anlegen</button>
+          <button id="new-treatment-btn" class="btn btn-accent btn-sm">Behandlung anlegen</button>
         </div>
       ` : ''}
 
@@ -503,8 +509,8 @@ export function StudioAdmin({ user }) {
                     </td>
                     <td style="white-space:nowrap">
                       <div style="display:flex;gap:4px;align-items:center">
-                        <button class="btn btn-ghost btn-sm btn-edit-treat" data-id="${t.id}">✏</button>
-                        ${t.active ? `<button class="btn btn-sm btn-deactivate-treat" data-id="${t.id}" style="background:var(--gold);color:#fff;font-size:0.72rem;padding:4px 8px">Deakt.</button>` : ''}
+                        <button class="btn btn-ghost btn-sm btn-edit-treat" data-id="${t.id}">Bearbeiten</button>
+                        ${t.active ? `<button class="btn btn-sm btn-deactivate-treat" data-id="${t.id}" style="background:var(--gold);color:#fff;font-size:0.72rem;padding:4px 8px">Deaktivieren</button>` : ''}
                         <button class="btn btn-sm btn-delete-treat" data-id="${t.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">Löschen</button>
                       </div>
                     </td>
@@ -515,9 +521,8 @@ export function StudioAdmin({ user }) {
           </div>
         ` : `
           <div class="empty-state" style="padding:40px 20px">
-            <span class="empty-state-icon">◉</span>
             <p style="margin-bottom:16px">Noch keine Behandlungen angelegt.</p>
-            <button id="new-treatment-cta" class="btn btn-accent">+ Erste Behandlung anlegen</button>
+            <button id="new-treatment-cta" class="btn btn-accent">Erste Behandlung anlegen</button>
           </div>
         `}
       </div>
@@ -530,7 +535,7 @@ export function StudioAdmin({ user }) {
 
       ${editingLocation === undefined ? `
         <div style="margin-bottom:16px">
-          <button id="new-location-btn" class="btn btn-accent btn-sm">+ Standort anlegen</button>
+          <button id="new-location-btn" class="btn btn-accent btn-sm">Standort anlegen</button>
         </div>
       ` : ''}
 
@@ -550,7 +555,7 @@ export function StudioAdmin({ user }) {
                     <td style="font-weight:600">${fmt(l.daily_revenue_target)}</td>
                     <td>
                       <div style="display:flex;gap:4px;align-items:center">
-                        <button class="btn btn-ghost btn-sm btn-edit-loc" data-id="${l.id}">✏ Bearbeiten</button>
+                        <button class="btn btn-ghost btn-sm btn-edit-loc" data-id="${l.id}">Bearbeiten</button>
                         <button class="btn btn-sm btn-delete-loc" data-id="${l.id}" style="background:var(--terracotta);color:#fff;font-size:0.72rem;padding:4px 8px">Löschen</button>
                       </div>
                     </td>
@@ -561,9 +566,8 @@ export function StudioAdmin({ user }) {
           </div>
         ` : `
           <div class="empty-state" style="padding:40px 20px">
-            <span class="empty-state-icon">◉</span>
             <p style="margin-bottom:16px">Noch keine Standorte angelegt.</p>
-            <button id="new-location-cta" class="btn btn-accent">+ Ersten Standort anlegen</button>
+            <button id="new-location-cta" class="btn btn-accent">Ersten Standort anlegen</button>
           </div>
         `}
       </div>
@@ -601,7 +605,6 @@ export function StudioAdmin({ user }) {
     const hasData = reportLogs.length > 0 || reportHours.length > 0
 
     return `
-      <!-- Selector row -->
       <div class="card" style="margin-bottom:20px">
         <div style="padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
           <select id="report-month" style="${inputStyle};width:auto;min-width:120px">
@@ -614,8 +617,8 @@ export function StudioAdmin({ user }) {
 
           ${hasData ? `
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
-              <button id="export-revenue-btn" class="btn btn-ghost btn-sm">📥 Umsatz-Export (.CSV)</button>
-              <button id="export-hours-btn"   class="btn btn-ghost btn-sm">📋 Stundenkonto-Export (.CSV)</button>
+              <button id="export-revenue-btn" class="btn btn-ghost btn-sm">Umsatz-Export (.CSV)</button>
+              <button id="export-hours-btn"   class="btn btn-ghost btn-sm">Stundenkonto-Export (.CSV)</button>
             </div>
           ` : ''}
         </div>
@@ -623,19 +626,16 @@ export function StudioAdmin({ user }) {
 
       ${!hasData ? `
         <div class="empty-state" style="padding:40px 20px">
-          <span class="empty-state-icon">📂</span>
           <p>Keine Daten für ${MONTHS[reportMonth - 1]} ${reportYear}.</p>
         </div>
       ` : `
-
-        <!-- KPI row -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
           ${[
             { label: 'Gesamtumsatz',    value: fmt(totalRevenue),      color: 'var(--aubergine)' },
             { label: 'Trinkgeld',       value: fmt(totalTips),         color: '#27AE60'          },
             { label: 'No-Show-Verlust', value: fmt(noShowLoss),        color: 'var(--terracotta)'},
             { label: 'Netto-Stunden',   value: netWorkHours + ' Std.', color: 'var(--aubergine)' },
-            { label: 'Ø Auslastung',    value: avgUtil + '%',          color: utilColor          },
+            { label: 'Auslastung',      value: avgUtil + '%',          color: utilColor          },
           ].map(k => `
             <div class="card" style="text-align:center;padding:16px">
               <div style="font-size:0.7rem;color:var(--text-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">${k.label}</div>
@@ -644,7 +644,6 @@ export function StudioAdmin({ user }) {
           `).join('')}
         </div>
 
-        <!-- Revenue by payment method -->
         <div class="card" style="margin-bottom:20px">
           <div class="card-header"><h4>Umsatz nach Zahlungsart</h4></div>
           <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
@@ -657,15 +656,14 @@ export function StudioAdmin({ user }) {
           </div>
         </div>
 
-        <!-- Summary counts -->
         <div class="card">
-          <div class="card-header"><h4>Übersicht ${MONTHS[reportMonth - 1]} ${reportYear}</h4></div>
+          <div class="card-header"><h4>Uebersicht ${MONTHS[reportMonth - 1]} ${reportYear}</h4></div>
           <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
             ${[
               { label: 'Buchungen (aktiv)',  value: realLogs.length },
               { label: 'No-Shows',           value: noShowLogs.length },
               { label: 'Stornierungen',      value: reportLogs.filter(l => l.is_cancelled).length },
-              { label: 'Zeiteinträge Team',  value: reportHours.length },
+              { label: 'Zeiteintraege Team', value: reportHours.length },
             ].map(r => `
               <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--cream-dark);border-radius:var(--radius-sm)">
                 <span style="font-size:0.82rem;color:var(--text-mid)">${r.label}</span>
@@ -684,7 +682,9 @@ export function StudioAdmin({ user }) {
     // Tab switching
     container.querySelectorAll('.location-tab[data-tab]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        activeTab        = btn.dataset.tab
+        const tab = btn.dataset.tab
+        if (tab === 'staff' && !isAdmin) return
+        activeTab        = tab
         editingTreatment = undefined
         editingLocation  = undefined
         if (activeTab === 'reports') {
@@ -744,11 +744,11 @@ export function StudioAdmin({ user }) {
       const name  = input?.value?.trim()
       if (!name) { showToast('Bitte einen Namen eingeben.', 'error'); return }
       const btn   = container.querySelector('#skill-create-btn')
-      btn.disabled = true; btn.textContent = '…'
+      btn.disabled = true; btn.textContent = '...'
       const { error } = await supabase.from('skills').insert({ name })
       if (error) { showToast('Fehler: ' + error.message, 'error') }
       else        { showToast(`Skill "${name}" erstellt!`) }
-      btn.disabled = false; btn.textContent = '+ Erstellen'
+      btn.disabled = false; btn.textContent = 'Erstellen'
       await loadData(); rerender()
     })
     container.querySelectorAll('.btn-rename-skill[data-id]').forEach(btn => {
@@ -786,10 +786,10 @@ export function StudioAdmin({ user }) {
     container.querySelectorAll('.btn-delete-skill[data-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const skill = availableSkills.find(s => s.id === btn.dataset.id)
-        if (!confirm(`Skill "${skill?.name ?? ''}" dauerhaft löschen?\n\nDie Zuweisung an alle Mitarbeiter wird ebenfalls entfernt.`)) return
+        if (!confirm(`Skill "${skill?.name ?? ''}" dauerhaft loeschen?\n\nDie Zuweisung an alle Mitarbeiter wird ebenfalls entfernt.`)) return
         const { error } = await supabase.from('skills').delete().eq('id', btn.dataset.id)
         if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-        showToast(`Skill "${skill?.name ?? ''}" gelöscht.`)
+        showToast(`Skill "${skill?.name ?? ''}" geloescht.`)
         await loadData(); rerender()
       })
     })
@@ -801,7 +801,7 @@ export function StudioAdmin({ user }) {
       if (mEl) reportMonth = parseInt(mEl.value, 10)
       if (yEl) reportYear  = parseInt(yEl.value, 10)
       const btn = container.querySelector('#load-report-btn')
-      if (btn) { btn.disabled = true; btn.textContent = 'Lädt…' }
+      if (btn) { btn.disabled = true; btn.textContent = 'Laedt...' }
       await loadReportData()
       rerender()
     })
