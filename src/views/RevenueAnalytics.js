@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase.js'
 // ── Revenue Analytics – Manager-only ─────────────────────────────────────────
 
 export function RevenueAnalytics({ user }) {
+  const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
+  const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
+  const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+
   let locations   = []
   let logs        = []
   let profiles    = []
@@ -43,8 +47,16 @@ export function RevenueAnalytics({ user }) {
     profiles   = profRes.data ?? []
     treatments = treatRes.data ?? []
 
-    // null → 'all' for managers without an assigned location
-    if (!selectedLocationId) selectedLocationId = 'all'
+    // Manager studio filter: restrict to home_studio
+    if (forcedLocSlug) {
+      const studioLoc = locations.find(l => l.slug === forcedLocSlug)
+      if (studioLoc) {
+        profiles           = profiles.filter(p => p.location_id === studioLoc.id)
+        selectedLocationId = studioLoc.id
+      }
+    } else if (!selectedLocationId) {
+      selectedLocationId = 'all'
+    }
     await Promise.all([loadLogs(), loadTarget(), loadHours(), loadTopServices()])
   }
 
@@ -603,7 +615,7 @@ export function RevenueAnalytics({ user }) {
           </label>
         </div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
-          <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem">
+          <select id="analytics-location" style="padding:7px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);background:var(--white);font-size:0.875rem" ${forcedLocSlug ? 'disabled' : ''}>
             <option value="all" ${selectedLocationId === 'all' ? 'selected' : ''}>Alle Standorte</option>
             ${locations.map(l => `<option value="${l.id}" ${l.id===selectedLocationId?'selected':''}>${l.name}</option>`).join('')}
           </select>

@@ -98,9 +98,9 @@ function renderApp(viewId) {
     const hdr = document.createElement('header')
     hdr.className = 'mobile-header'
     hdr.innerHTML = `
-      <img src="/images/studio358-logo.png" class="mobile-header-logo" alt="">
+      <img src="/images/studio358-logo.png" class="mobile-header-logo" alt="" style="filter:brightness(0) invert(1)">
       <span class="mobile-header-title">${viewName(viewId)}</span>
-      <button class="mobile-hamburger" aria-label="Menü öffnen">☰</button>
+      <button class="mobile-hamburger" aria-label="Menü öffnen">[ Menü ]</button>
     `
     hdr.querySelector('.mobile-hamburger').addEventListener('click', openMobileMenu)
     contentWrap.appendChild(hdr)
@@ -182,7 +182,7 @@ function openMobileMenu() {
 
   const overlay = document.createElement('div')
   overlay.id = 'mobile-menu-overlay'
-  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:7000;display:flex;align-items:stretch'
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100dvh;z-index:7000;display:flex;align-items:stretch'
 
   const backdrop = document.createElement('div')
   backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.52)'

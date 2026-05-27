@@ -29,30 +29,40 @@ export function DailyCheckout({ user, onNavigate }) {
   // ── Data loading ──────────────────────────────────────────────────────────────
 
   async function loadData() {
-    const baseQueries = [
+    const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
+    const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
+    const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+
+    // Phase 1: locations + treatments (must resolve before fetching logs)
+    const [locRes, treatRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
       supabase.from('treatments').select('*').eq('active', true).order('name'),
-      fetchTodayLogs(),
-    ]
-
-    const [locRes, treatRes, logRes, empRes] = await Promise.all(
-      isManager
-        ? [...baseQueries, supabase.from('profiles').select('id,full_name').eq('role', 'employee').order('full_name')]
-        : baseQueries
-    )
-    locations  = locRes.data   ?? []
+    ])
+    locations  = locRes.data ?? []
     treatments = (treatRes.data ?? []).filter(t => t.is_deleted !== true)
-    todayLogs  = logRes
-    if (isManager) employees = empRes?.data ?? []
 
-    if (!selectedLocationId) {
+    // Resolve selectedLocationId before logs query
+    if (forcedLocSlug) {
+      selectedLocationId = locations.find(l => l.slug === forcedLocSlug)?.id ?? null
+    } else if (!selectedLocationId) {
       if (isManager) {
-        selectedLocationId = 'all'   // managers default to full overview
+        selectedLocationId = 'all'
       } else {
         const slug = user?.profile?.location
         selectedLocationId = locations.find(l => l.slug === slug)?.id ?? locations[0]?.id ?? null
       }
     }
+
+    // Phase 2: logs + employees in parallel (selectedLocationId now resolved)
+    const phase2 = [fetchTodayLogs()]
+    if (isManager) {
+      let empQ = supabase.from('profiles').select('id,full_name').eq('role', 'employee').order('full_name')
+      if (forcedLocSlug) empQ = empQ.eq('location', forcedLocSlug)
+      phase2.push(empQ)
+    }
+    const [logRes, empRes] = await Promise.all(phase2)
+    todayLogs = logRes
+    if (isManager) employees = empRes?.data ?? []
 
     // Load working-hours entries for the selected date
     const todayDate = dateFrom

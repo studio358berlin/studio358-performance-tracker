@@ -24,10 +24,11 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
   function render() {
     const el = document.createElement('aside')
     el.className = 'sidebar'
+    el.style.cssText = 'display:flex;flex-direction:column;height:100%'
 
     el.innerHTML = `
       <div class="sidebar-logo">
-        <img src="/images/studio358-logo.png" alt="Studio 358" />
+        <img src="/images/studio358-logo.png" alt="Studio 358" style="filter:brightness(0) invert(1)" />
         <p>Performance Tracker</p>
       </div>
 
@@ -40,7 +41,7 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
         `).join('')}
       </nav>
 
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" style="margin-top:auto">
         <div class="sidebar-user">
           <div class="sidebar-avatar">${initials}</div>
           <div class="sidebar-user-info">

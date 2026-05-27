@@ -9,15 +9,14 @@ export function StudioAdmin({ user }) {
   let treatments       = []
   let availableSkills  = []
   let staffProfiles    = []
-  let activeTab        = 'treatments'  // 'treatments' | 'locations' | 'skills' | 'reports' | 'staff'
+  let activeTab        = 'treatments'
   let container        = null
-  let editingTreatment = undefined  // undefined=list view, null=new form, {obj}=edit form
+  let editingTreatment = undefined
   let editingLocation  = undefined
 
-  // Reports state
   const _now = new Date()
   let reportYear  = _now.getFullYear()
-  let reportMonth = _now.getMonth() + 1  // 1–12
+  let reportMonth = _now.getMonth() + 1
   let reportLogs  = []
   let reportHours = []
 
@@ -51,7 +50,7 @@ export function StudioAdmin({ user }) {
       .from('profiles')
       .select('*')
       .order('full_name')
-    if (error) { showToast('Fehler beim Laden der Mitarbeiter: ' + error.message, 'error'); return }
+    if (error) { showToast('Fehler beim Laden: ' + error.message, 'error'); return }
     staffProfiles = data ?? []
   }
 
@@ -60,7 +59,6 @@ export function StudioAdmin({ user }) {
     const firstDay = `${reportYear}-${mm}-01`
     const lastDate = new Date(reportYear, reportMonth, 0).getDate()
     const lastDay  = `${reportYear}-${mm}-${String(lastDate).padStart(2, '0')}`
-
     const [logsRes, hoursRes] = await Promise.all([
       supabase.from('daily_revenue_logs')
         .select('*, employee:employee_id(full_name), treatment:treatment_id(name, duration)')
@@ -82,7 +80,6 @@ export function StudioAdmin({ user }) {
   async function saveTreatment(data, id = null) {
     const name = (data.name ?? '').trim()
     if (!name) { showToast('Name ist erforderlich.', 'error'); return }
-
     const payload = {
       name,
       price:       Number(Math.max(0, parseFloat(data.price) || 0)),
@@ -93,31 +90,26 @@ export function StudioAdmin({ user }) {
     const { error } = id
       ? await supabase.from('treatments').update(payload).eq('id', id)
       : await supabase.from('treatments').insert(payload)
-
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast(id ? 'Behandlung aktualisiert.' : 'Behandlung erstellt.')
-    await loadData()
-    editingTreatment = undefined
-    rerender()
+    await loadData(); editingTreatment = undefined; rerender()
   }
 
   async function deactivateTreatment(id) {
-    if (!confirm('Behandlung deaktivieren? Sie bleibt in historischen Reports sichtbar.')) return
+    if (!confirm('Behandlung deaktivieren?')) return
     const { error } = await supabase.from('treatments').update({ active: false }).eq('id', id)
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast('Behandlung deaktiviert.')
-    await loadData()
-    rerender()
+    await loadData(); rerender()
   }
 
   async function deleteTreatment(id) {
     const t = treatments.find(x => x.id === id)
-    if (!confirm(`Behandlung "${t?.name ?? ''}" archivieren?\n\nSie verschwindet aus allen Listen. Historische Buchungen bleiben erhalten.`)) return
+    if (!confirm(`Behandlung "${t?.name ?? ''}" archivieren?`)) return
     const { error } = await supabase.from('treatments').update({ is_deleted: true }).eq('id', id)
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast('Behandlung archiviert.')
-    await loadData()
-    rerender()
+    await loadData(); rerender()
   }
 
   // ── Location CRUD ─────────────────────────────────────────────────────────────
@@ -125,58 +117,44 @@ export function StudioAdmin({ user }) {
   async function saveLocation(data, id = null) {
     const name = (data.name ?? '').trim()
     if (!name) { showToast('Name ist erforderlich.', 'error'); return }
-    const slug = (data.slug?.trim() || name).toLowerCase().replace(/\s+/g, '-')
-    const payload = {
-      name,
-      slug,
-      daily_revenue_target: Math.max(0, parseFloat(data.daily_revenue_target) || 0),
-    }
+    const slug    = (data.slug?.trim() || name).toLowerCase().replace(/\s+/g, '-')
+    const payload = { name, slug, daily_revenue_target: Math.max(0, parseFloat(data.daily_revenue_target) || 0) }
     const { error } = id
       ? await supabase.from('locations').update(payload).eq('id', id)
       : await supabase.from('locations').insert(payload)
-
     if (error) { showToast('Fehler: ' + error.message, 'error'); return }
     showToast(id ? 'Standort aktualisiert.' : 'Standort erstellt.')
-    await loadData()
-    editingLocation = undefined
-    rerender()
+    await loadData(); editingLocation = undefined; rerender()
   }
 
   async function deleteLocation(id) {
     const l = locations.find(x => x.id === id)
-    if (!confirm(`Standort "${l?.name ?? ''}" endgültig löschen?\n\nNur möglich wenn keine Umsätze oder aktiven Mitarbeiter damit verknüpft sind.`)) return
+    if (!confirm(`Standort "${l?.name ?? ''}" endgültig löschen?`)) return
     const { error } = await supabase.from('locations').delete().eq('id', id)
     if (error) { showToast('Löschen nicht möglich: ' + error.message, 'error'); return }
     showToast('Standort gelöscht.')
-    await loadData()
-    rerender()
+    await loadData(); rerender()
   }
 
   // ── Staff management (Admin only) ─────────────────────────────────────────────
 
   async function updateRole(profileId, newRole) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', profileId)
-
-    if (error) {
-      showToast('Fehler beim Aktualisieren der Rolle: ' + error.message, 'error')
-      await loadStaffData()
-      rerender()
-      return
-    }
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profileId)
+    if (error) { showToast('Fehler: ' + error.message, 'error'); await loadStaffData(); rerender(); return }
     showToast('Rolle erfolgreich aktualisiert.')
-    await loadStaffData()
-    rerender()
+    await loadStaffData(); rerender()
+  }
+
+  async function updateHomeStudio(profileId, homeStudio) {
+    const { error } = await supabase.from('profiles').update({ home_studio: homeStudio || null }).eq('id', profileId)
+    if (error) { showToast('Fehler: ' + error.message, 'error'); await loadStaffData(); rerender(); return }
+    showToast('Stammstudio aktualisiert.')
+    await loadStaffData(); rerender()
   }
 
   function confirmDeleteProfile(profileId) {
     const ownId = user?.id ?? user?.profile?.id
-    if (profileId === ownId) {
-      showToast('Du kannst dein eigenes Profil nicht löschen.', 'error')
-      return
-    }
+    if (profileId === ownId) { showToast('Du kannst dein eigenes Profil nicht löschen.', 'error'); return }
     const profile = staffProfiles.find(p => p.id === profileId)
     showDeleteModal(profile)
   }
@@ -187,23 +165,15 @@ export function StudioAdmin({ user }) {
 
     const overlay = document.createElement('div')
     overlay.id = 'staff-delete-modal'
-    overlay.style.cssText = [
-      'position:fixed;inset:0;z-index:9000',
-      'display:flex;align-items:center;justify-content:center',
-      'background:rgba(0,0,0,0.55)',
-    ].join(';')
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55)'
 
     overlay.innerHTML = `
       <div style="background:#fff;border-radius:12px;padding:28px 24px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
         <h4 style="margin:0 0 10px;color:var(--aubergine);font-size:1.05rem">Mitarbeiter löschen?</h4>
-        <p style="margin:0 0 8px;color:var(--text-mid,#666);font-size:0.9rem;line-height:1.55">
+        <p style="margin:0 0 8px;color:var(--text-mid);font-size:0.9rem;line-height:1.55">
           Mitarbeiter wirklich löschen? Dadurch verliert die Person jeglichen Zugriff auf die App.
         </p>
-        ${profile?.full_name ? `
-          <p style="margin:0 0 20px;font-size:0.9rem">
-            <strong style="color:var(--aubergine)">${profile.full_name}</strong> wird dauerhaft entfernt.
-          </p>
-        ` : '<div style="margin-bottom:20px"></div>'}
+        ${profile?.full_name ? `<p style="margin:0 0 20px;font-size:0.9rem"><strong style="color:var(--aubergine)">${profile.full_name}</strong> wird dauerhaft entfernt.</p>` : '<div style="margin-bottom:20px"></div>'}
         <div style="display:flex;gap:10px;justify-content:flex-end">
           <button id="modal-cancel-btn" class="btn btn-ghost btn-sm">Abbrechen</button>
           <button id="modal-confirm-btn" class="btn btn-sm" style="background:var(--terracotta);color:#fff">Löschen</button>
@@ -217,19 +187,16 @@ export function StudioAdmin({ user }) {
       const { error } = await supabase.from('profiles').delete().eq('id', profile.id)
       if (error) { showToast('Fehler: ' + error.message, 'error'); return }
       showToast(`${profile?.full_name ?? 'Mitarbeiter'} wurde entfernt.`)
-      await loadStaffData()
-      rerender()
+      await loadStaffData(); rerender()
     })
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
-
     document.body.appendChild(overlay)
   }
 
   // ── CSV helpers ───────────────────────────────────────────────────────────────
 
   function triggerDownload(csvContent, filename) {
-    const BOM  = '﻿'
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href = url; a.download = filename
@@ -239,31 +206,25 @@ export function StudioAdmin({ user }) {
 
   function downloadRevenueCsv() {
     const mm     = String(reportMonth).padStart(2, '0')
-    const header = 'Datum;Mitarbeiter;Behandlung;Preis (€);Upsell (€);Trinkgeld (€);Zahlungsart;Status;Zahlungsart 1;Betrag 1 (€);Zahlungsart 2;Betrag 2 (€)'
+    const header = 'Datum;Mitarbeiter;Behandlung;Preis (EUR);Upsell (EUR);Trinkgeld (EUR);Zahlungsart;Status;Zahlungsart 1;Betrag 1 (EUR);Zahlungsart 2;Betrag 2 (EUR)'
     const rows   = reportLogs.map(l => {
-      const date    = new Date(l.created_at).toLocaleDateString('de-DE')
-      const emp     = (l.employee?.full_name ?? '–').replace(/;/g, ',')
-      const treat   = (l.treatment?.name    ?? '–').replace(/;/g, ',')
-      const price   = Number(l.revenue      ?? 0).toFixed(2).replace('.', ',')
-      const upsell  = Number(l.upsell_amount ?? 0).toFixed(2).replace('.', ',')
-      const tip     = Number(l.tip           ?? 0).toFixed(2).replace('.', ',')
-      const method  = l.payment_method ?? '–'
-      const status  = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'NO-SHOW' : 'OK'
-      const method1 = l.payment_method ?? '–'
-      const amt1    = l.payment_method_2
-        ? Number(l.amount_method_1 ?? 0).toFixed(2).replace('.', ',')
-        : price
+      const date   = new Date(l.created_at).toLocaleDateString('de-DE')
+      const emp    = (l.employee?.full_name ?? '-').replace(/;/g, ',')
+      const treat  = (l.treatment?.name    ?? '-').replace(/;/g, ',')
+      const price  = Number(l.revenue      ?? 0).toFixed(2).replace('.', ',')
+      const upsell = Number(l.upsell_amount ?? 0).toFixed(2).replace('.', ',')
+      const tip    = Number(l.tip           ?? 0).toFixed(2).replace('.', ',')
+      const method = l.payment_method ?? '-'
+      const status = l.is_cancelled ? 'STORNIERT' : l.is_no_show ? 'NO-SHOW' : 'OK'
+      const amt1   = l.payment_method_2 ? Number(l.amount_method_1 ?? 0).toFixed(2).replace('.', ',') : price
       const method2 = l.payment_method_2 ?? ''
-      const amt2    = l.payment_method_2
-        ? Number(l.amount_method_2 ?? 0).toFixed(2).replace('.', ',')
-        : '0,00'
-      return `${date};${emp};${treat};${price};${upsell};${tip};${method};${status};${method1};${amt1};${method2};${amt2}`
+      const amt2   = l.payment_method_2 ? Number(l.amount_method_2 ?? 0).toFixed(2).replace('.', ',') : '0,00'
+      return `${date};${emp};${treat};${price};${upsell};${tip};${method};${status};${method};${amt1};${method2};${amt2}`
     })
     const active   = reportLogs.filter(l => !l.is_cancelled)
     const sumPrice = active.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
     const sumTip   = active.reduce((s, l) => s + Number(l.tip    ?? 0), 0)
-    const sumLine  = `GESAMTSUMME;;;${sumPrice.toFixed(2).replace('.', ',')} €;;${sumTip.toFixed(2).replace('.', ',')} €;;;;;;`
-    triggerDownload([header, ...rows, '', sumLine].join('\n'), `umsatz_${reportYear}_${mm}.csv`)
+    triggerDownload([header, ...rows, '', `GESAMTSUMME;;;${sumPrice.toFixed(2).replace('.', ',')};;${sumTip.toFixed(2).replace('.', ',')};;;;;;`].join('\n'), `umsatz_${reportYear}_${mm}.csv`)
   }
 
   function downloadHoursCsv() {
@@ -271,7 +232,7 @@ export function StudioAdmin({ user }) {
     const header = 'Datum;Mitarbeiter;Arbeitsstunden;Pause (Min);Netto-Stunden'
     const rows   = reportHours.map(h => {
       const date   = new Date(h.date + 'T12:00:00').toLocaleDateString('de-DE')
-      const emp    = (h.employee?.full_name ?? '–').replace(/;/g, ',')
+      const emp    = (h.employee?.full_name ?? '-').replace(/;/g, ',')
       const worked = Number(h.hours_worked  ?? 0).toFixed(2).replace('.', ',')
       const pause  = Number(h.break_minutes ?? 0)
       const net    = Math.max(0, Number(h.hours_worked ?? 0) - Number(h.break_minutes ?? 0) / 60).toFixed(2).replace('.', ',')
@@ -280,27 +241,25 @@ export function StudioAdmin({ user }) {
     const sumBrutto = reportHours.reduce((s, h) => s + Number(h.hours_worked  ?? 0), 0)
     const sumPause  = reportHours.reduce((s, h) => s + Number(h.break_minutes ?? 0), 0)
     const sumNetto  = reportHours.reduce((s, h) => s + Math.max(0, Number(h.hours_worked ?? 0) - Number(h.break_minutes ?? 0) / 60), 0)
-    const sumLine   = `GESAMTSUMME;;${sumBrutto.toFixed(2).replace('.', ',')} Std;${sumPause} Min;${sumNetto.toFixed(2).replace('.', ',')} Std`
-    triggerDownload([header, ...rows, '', sumLine].join('\n'), `stunden_${reportYear}_${mm}.csv`)
+    triggerDownload([header, ...rows, '', `GESAMTSUMME;;${sumBrutto.toFixed(2).replace('.', ',')} Std;${sumPause} Min;${sumNetto.toFixed(2).replace('.', ',')} Std`].join('\n'), `stunden_${reportYear}_${mm}.csv`)
   }
 
-  // ── HTML ──────────────────────────────────────────────────────────────────────
+  // ── HTML builders ─────────────────────────────────────────────────────────────
 
   function buildTreatmentForm(t = null) {
-    const isNew = !t
     return `
       <div class="card" style="margin-bottom:20px;border:2px solid var(--aubergine)">
         <div class="card-header">
-          <h4>${isNew ? 'Neue Behandlung' : 'Behandlung bearbeiten'}</h4>
+          <h4>${!t ? 'Neue Behandlung' : 'Behandlung bearbeiten'}</h4>
           <button id="cancel-treatment-form" class="btn btn-ghost btn-sm">Abbrechen</button>
         </div>
         <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <label style="grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
             Name *
-            <input id="treat-name" type="text" value="${t?.name ?? ''}" placeholder="z. B. Shellac" style="${inputStyle}">
+            <input id="treat-name" type="text" value="${t?.name ?? ''}" placeholder="z.B. Shellac" style="${inputStyle}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
-            Preis (€) *
+            Preis (EUR) *
             <input id="treat-price" type="number" min="0" step="0.01" value="${t?.price ?? ''}" placeholder="0.00" style="${inputStyle}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
@@ -327,24 +286,23 @@ export function StudioAdmin({ user }) {
   }
 
   function buildLocationForm(l = null) {
-    const isNew = !l
     return `
       <div class="card" style="margin-bottom:20px;border:2px solid var(--aubergine)">
         <div class="card-header">
-          <h4>${isNew ? 'Neuer Standort' : 'Standort bearbeiten'}</h4>
+          <h4>${!l ? 'Neuer Standort' : 'Standort bearbeiten'}</h4>
           <button id="cancel-location-form" class="btn btn-ghost btn-sm">Abbrechen</button>
         </div>
         <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
             Name *
-            <input id="loc-name" type="text" value="${l?.name ?? ''}" placeholder="z. B. Mitte" style="${inputStyle}">
+            <input id="loc-name" type="text" value="${l?.name ?? ''}" placeholder="z.B. Mitte" style="${inputStyle}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
             Slug *
             <input id="loc-slug" type="text" value="${l?.slug ?? ''}" placeholder="mitte" style="${inputStyle}">
           </label>
           <label style="grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
-            Tages-Umsatzziel (€)
+            Tages-Umsatzziel (EUR)
             <input id="loc-target" type="number" min="0" step="10" value="${l?.daily_revenue_target ?? 0}" style="${inputStyle}">
           </label>
         </div>
@@ -360,11 +318,10 @@ export function StudioAdmin({ user }) {
       <div class="card" style="margin-bottom:20px">
         <div class="card-header"><h4>Neuen Skill erstellen</h4></div>
         <div style="padding:14px 16px;display:flex;gap:10px">
-          <input id="skill-new-name" type="text" placeholder="Skill-Name (z. B. Shellac)" style="${inputStyle};flex:1">
+          <input id="skill-new-name" type="text" placeholder="Skill-Name" style="${inputStyle};flex:1">
           <button id="skill-create-btn" class="btn btn-accent btn-sm" style="white-space:nowrap">Erstellen</button>
         </div>
       </div>
-
       <div class="card">
         <div class="card-header"><h4>Alle Skills (${availableSkills.length})</h4></div>
         ${availableSkills.length ? `
@@ -379,11 +336,7 @@ export function StudioAdmin({ user }) {
               </div>
             `).join('')}
           </div>
-        ` : `
-          <div class="empty-state" style="padding:32px 20px">
-            <p>Noch keine Skills angelegt.</p>
-          </div>
-        `}
+        ` : `<div class="empty-state" style="padding:32px 20px"><p>Noch keine Skills angelegt.</p></div>`}
       </div>
     `
   }
@@ -394,20 +347,19 @@ export function StudioAdmin({ user }) {
       { value: 'manager',  label: 'Manager'  },
       { value: 'employee', label: 'Employee' },
     ]
+    const studioOptions = [
+      { value: '',           label: '-- Kein Stammstudio --' },
+      { value: 'KaDeWe',    label: 'KaDeWe'                 },
+      { value: 'Studio Mitte', label: 'Studio Mitte'        },
+    ]
 
     if (!staffProfiles.length) {
-      return `
-        <div class="empty-state" style="padding:48px 20px">
-          <p>Noch keine Mitarbeiterprofile vorhanden.</p>
-        </div>
-      `
+      return `<div class="empty-state" style="padding:48px 20px"><p>Noch keine Mitarbeiterprofile vorhanden.</p></div>`
     }
 
     return `
       <div class="card">
-        <div class="card-header">
-          <h4>Alle Mitarbeiter (${staffProfiles.length})</h4>
-        </div>
+        <div class="card-header"><h4>Alle Mitarbeiter (${staffProfiles.length})</h4></div>
         <div class="table-wrapper">
           <table>
             <thead>
@@ -415,7 +367,8 @@ export function StudioAdmin({ user }) {
                 <th>Name</th>
                 <th>E-Mail</th>
                 <th>Aktuelle Rolle</th>
-                <th style="text-align:center">Aktionen</th>
+                <th>Stammstudio</th>
+                <th style="text-align:center">Aktion</th>
               </tr>
             </thead>
             <tbody>
@@ -425,16 +378,19 @@ export function StudioAdmin({ user }) {
                   <td style="color:var(--text-mid);font-size:0.84rem">${p.email ?? '–'}</td>
                   <td>
                     <select class="staff-role-select" data-id="${p.id}" style="${selectStyle}">
-                      ${roleOptions.map(r => `
-                        <option value="${r.value}" ${(p.role ?? 'employee') === r.value ? 'selected' : ''}>${r.label}</option>
-                      `).join('')}
+                      ${roleOptions.map(r => `<option value="${r.value}" ${(p.role ?? 'employee') === r.value ? 'selected' : ''}>${r.label}</option>`).join('')}
+                    </select>
+                  </td>
+                  <td>
+                    <select class="staff-studio-select" data-id="${p.id}" style="${selectStyle}">
+                      ${studioOptions.map(s => `<option value="${s.value}" ${(p.home_studio ?? '') === s.value ? 'selected' : ''}>${s.label}</option>`).join('')}
                     </select>
                   </td>
                   <td style="text-align:center">
                     <button
                       class="staff-delete-btn btn btn-sm"
                       data-id="${p.id}"
-                      style="background:var(--terracotta);color:#fff;font-size:0.78rem;padding:5px 12px;border:none;border-radius:var(--radius-sm,6px);cursor:pointer"
+                      style="background:var(--terracotta);color:#fff;font-size:0.78rem;padding:5px 12px;border:none;border-radius:var(--radius-sm);cursor:pointer"
                     >Löschen</button>
                   </td>
                 </tr>
@@ -458,7 +414,7 @@ export function StudioAdmin({ user }) {
         <button class="location-tab ${activeTab === 'locations'  ? 'active' : ''}" data-tab="locations">Standorte</button>
         <button class="location-tab ${activeTab === 'skills'     ? 'active' : ''}" data-tab="skills">Skills</button>
         <button class="location-tab ${activeTab === 'reports'    ? 'active' : ''}" data-tab="reports">Monatsberichte</button>
-        <button class="location-tab ${activeTab === 'staff'      ? 'active' : ''}" data-tab="staff">Mitarbeiter-Verwaltung</button>
+        ${isAdmin ? `<button class="location-tab ${activeTab === 'staff' ? 'active' : ''}" data-tab="staff">Mitarbeiter-Verwaltung</button>` : ''}
       </div>
 
       ${activeTab === 'treatments' ? buildTreatmentsPanel()
@@ -472,21 +428,13 @@ export function StudioAdmin({ user }) {
   function buildTreatmentsPanel() {
     return `
       ${editingTreatment !== undefined ? buildTreatmentForm(editingTreatment) : ''}
-
-      ${editingTreatment === undefined ? `
-        <div style="margin-bottom:16px">
-          <button id="new-treatment-btn" class="btn btn-accent btn-sm">Behandlung anlegen</button>
-        </div>
-      ` : ''}
-
+      ${editingTreatment === undefined ? `<div style="margin-bottom:16px"><button id="new-treatment-btn" class="btn btn-accent btn-sm">Behandlung anlegen</button></div>` : ''}
       <div class="card">
         <div class="card-header"><h4>Alle Behandlungen (${treatments.length})</h4></div>
         ${treatments.length ? `
           <div class="table-wrapper">
             <table>
-              <thead>
-                <tr><th>Name</th><th>Preis</th><th>Dauer</th><th>Standort</th><th>Status</th><th></th></tr>
-              </thead>
+              <thead><tr><th>Name</th><th>Preis</th><th>Dauer</th><th>Standort</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 ${treatments.map(t => `
                   <tr style="${!t.active ? 'opacity:0.45' : ''}">
@@ -524,21 +472,13 @@ export function StudioAdmin({ user }) {
   function buildLocationsPanel() {
     return `
       ${editingLocation !== undefined ? buildLocationForm(editingLocation) : ''}
-
-      ${editingLocation === undefined ? `
-        <div style="margin-bottom:16px">
-          <button id="new-location-btn" class="btn btn-accent btn-sm">Standort anlegen</button>
-        </div>
-      ` : ''}
-
+      ${editingLocation === undefined ? `<div style="margin-bottom:16px"><button id="new-location-btn" class="btn btn-accent btn-sm">Standort anlegen</button></div>` : ''}
       <div class="card">
         <div class="card-header"><h4>Standorte (${locations.length})</h4></div>
         ${locations.length ? `
           <div class="table-wrapper">
             <table>
-              <thead>
-                <tr><th>Name</th><th>Slug</th><th>Tagesziel</th><th></th></tr>
-              </thead>
+              <thead><tr><th>Name</th><th>Slug</th><th>Tagesziel</th><th></th></tr></thead>
               <tbody>
                 ${locations.map(l => `
                   <tr>
@@ -570,30 +510,24 @@ export function StudioAdmin({ user }) {
     const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
     const curYear = new Date().getFullYear()
     const years   = [curYear, curYear - 1, curYear - 2]
-
     const activeLogs = reportLogs.filter(l => !l.is_cancelled)
     const realLogs   = activeLogs.filter(l => !l.is_no_show)
-    const noShowLogs = activeLogs.filter(l => l.is_no_show)
-
+    const noShowLogs = activeLogs.filter(l =>  l.is_no_show)
     const methods      = ['bar', 'ec', 'paypal', 'online']
     const methodLabels = { bar: 'Bar', ec: 'EC-Karte', paypal: 'PayPal', online: 'Online' }
-
     const revenueByMethod = {}
     methods.forEach(m => {
-      revenueByMethod[m] = realLogs
-        .filter(l => (l.payment_method ?? 'bar') === m)
+      revenueByMethod[m] = realLogs.filter(l => (l.payment_method ?? 'bar') === m)
         .reduce((s, l) => s + Number(l.revenue ?? 0) + Number(l.upsell_amount ?? 0), 0)
     })
     const totalRevenue = methods.reduce((s, m) => s + revenueByMethod[m], 0)
     const totalTips    = realLogs.reduce((s, l) => s + Number(l.tip ?? 0), 0)
     const noShowLoss   = noShowLogs.reduce((s, l) => s + Number(l.revenue ?? 0), 0)
-
     const netWorkMins  = reportHours.reduce((s, h) => s + Math.max(0, Number(h.hours_worked ?? 0) * 60 - Number(h.break_minutes ?? 0)), 0)
     const netWorkHours = (netWorkMins / 60).toFixed(1)
     const treatMins    = realLogs.reduce((s, l) => s + Number(l.treatment?.duration ?? 60), 0)
     const avgUtil      = netWorkMins > 0 ? Math.round((treatMins / netWorkMins) * 100) : 0
     const utilColor    = avgUtil >= 80 ? '#27AE60' : avgUtil >= 50 ? 'var(--gold)' : 'var(--terracotta)'
-
     const hasData = reportLogs.length > 0 || reportHours.length > 0
 
     return `
@@ -606,7 +540,6 @@ export function StudioAdmin({ user }) {
             ${years.map(y => `<option value="${y}" ${reportYear === y ? 'selected' : ''}>${y}</option>`).join('')}
           </select>
           <button id="load-report-btn" class="btn btn-accent btn-sm">Laden</button>
-
           ${hasData ? `
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
               <button id="export-revenue-btn" class="btn btn-ghost btn-sm">Umsatz-Export (.CSV)</button>
@@ -635,7 +568,6 @@ export function StudioAdmin({ user }) {
             </div>
           `).join('')}
         </div>
-
         <div class="card" style="margin-bottom:20px">
           <div class="card-header"><h4>Umsatz nach Zahlungsart</h4></div>
           <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
@@ -647,15 +579,14 @@ export function StudioAdmin({ user }) {
             `).join('')}
           </div>
         </div>
-
         <div class="card">
-          <div class="card-header"><h4>Uebersicht ${MONTHS[reportMonth - 1]} ${reportYear}</h4></div>
+          <div class="card-header"><h4>Übersicht ${MONTHS[reportMonth - 1]} ${reportYear}</h4></div>
           <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
             ${[
-              { label: 'Buchungen (aktiv)',  value: realLogs.length },
-              { label: 'No-Shows',           value: noShowLogs.length },
-              { label: 'Stornierungen',      value: reportLogs.filter(l => l.is_cancelled).length },
-              { label: 'Zeiteintraege Team', value: reportHours.length },
+              { label: 'Buchungen (aktiv)', value: realLogs.length },
+              { label: 'No-Shows',          value: noShowLogs.length },
+              { label: 'Stornierungen',     value: reportLogs.filter(l => l.is_cancelled).length },
+              { label: 'Zeiteinträge Team', value: reportHours.length },
             ].map(r => `
               <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--cream-dark);border-radius:var(--radius-sm)">
                 <span style="font-size:0.82rem;color:var(--text-mid)">${r.label}</span>
@@ -671,19 +602,13 @@ export function StudioAdmin({ user }) {
   // ── Events ────────────────────────────────────────────────────────────────────
 
   function attachEvents() {
-    // Tab switching
     container.querySelectorAll('.location-tab[data-tab]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const tab = btn.dataset.tab
-        activeTab        = tab
-        editingTreatment = undefined
-        editingLocation  = undefined
-        if (activeTab === 'reports') {
-          container.innerHTML = buildHTML()
-          await loadReportData()
-        } else if (activeTab === 'staff') {
-          await loadStaffData()
-        }
+        if (tab === 'staff' && !isAdmin) return
+        activeTab = tab; editingTreatment = undefined; editingLocation = undefined
+        if (tab === 'reports') { container.innerHTML = buildHTML(); await loadReportData() }
+        else if (tab === 'staff') { await loadStaffData() }
         rerender()
       })
     })
@@ -744,19 +669,17 @@ export function StudioAdmin({ user }) {
     })
     container.querySelectorAll('.btn-rename-skill[data-id]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const id   = btn.dataset.id
-        const item = container.querySelector(`.skill-item[data-id="${id}"]`)
+        const id    = btn.dataset.id
+        const item  = container.querySelector(`.skill-item[data-id="${id}"]`)
         if (!item) return
         const label = item.querySelector('.skill-item-label')
         const orig  = label.textContent
-
-        const inp = document.createElement('input')
+        const inp   = document.createElement('input')
         inp.type = 'text'; inp.value = orig
         inp.style.cssText = 'padding:4px 10px;border:2px solid var(--aubergine);border-radius:var(--radius-sm);font-size:0.88rem;background:var(--white);color:var(--aubergine);outline:none;min-width:120px'
         item.replaceChild(inp, label)
         btn.style.visibility = 'hidden'
         inp.focus(); inp.select()
-
         let committed = false
         async function commitRename() {
           if (committed) return; committed = true
@@ -777,34 +700,38 @@ export function StudioAdmin({ user }) {
     container.querySelectorAll('.btn-delete-skill[data-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const skill = availableSkills.find(s => s.id === btn.dataset.id)
-        if (!confirm(`Skill "${skill?.name ?? ''}" dauerhaft loeschen?\n\nDie Zuweisung an alle Mitarbeiter wird ebenfalls entfernt.`)) return
+        if (!confirm(`Skill "${skill?.name ?? ''}" dauerhaft löschen?`)) return
         const { error } = await supabase.from('skills').delete().eq('id', btn.dataset.id)
         if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-        showToast(`Skill "${skill?.name ?? ''}" geloescht.`)
+        showToast(`Skill "${skill?.name ?? ''}" gelöscht.`)
         await loadData(); rerender()
       })
     })
 
-    // Reports tab
+    // Reports
     container.querySelector('#load-report-btn')?.addEventListener('click', async () => {
       const mEl = container.querySelector('#report-month')
       const yEl = container.querySelector('#report-year')
       if (mEl) reportMonth = parseInt(mEl.value, 10)
       if (yEl) reportYear  = parseInt(yEl.value, 10)
       const btn = container.querySelector('#load-report-btn')
-      if (btn) { btn.disabled = true; btn.textContent = 'Laedt...' }
-      await loadReportData()
-      rerender()
+      if (btn) { btn.disabled = true; btn.textContent = 'Lädt...' }
+      await loadReportData(); rerender()
     })
     container.querySelector('#export-revenue-btn')?.addEventListener('click', downloadRevenueCsv)
     container.querySelector('#export-hours-btn')?.addEventListener('click',   downloadHoursCsv)
 
-    // Staff tab: role change
+    // Staff: role change
     container.querySelectorAll('.staff-role-select[data-id]').forEach(sel => {
       sel.addEventListener('change', () => updateRole(sel.dataset.id, sel.value))
     })
 
-    // Staff tab: delete profile
+    // Staff: home_studio change
+    container.querySelectorAll('.staff-studio-select[data-id]').forEach(sel => {
+      sel.addEventListener('change', () => updateHomeStudio(sel.dataset.id, sel.value))
+    })
+
+    // Staff: delete
     container.querySelectorAll('.staff-delete-btn[data-id]').forEach(btn => {
       btn.addEventListener('click', () => confirmDeleteProfile(btn.dataset.id))
     })
@@ -821,7 +748,6 @@ export function StudioAdmin({ user }) {
     el.className = 'main-content'
     el.innerHTML = '<div class="loader"><div class="spinner"></div></div>'
     container = el
-
     await loadData()
     el.innerHTML = buildHTML()
     attachEvents()
@@ -832,7 +758,7 @@ export function StudioAdmin({ user }) {
 }
 
 const inputStyle  = 'padding:8px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;width:100%'
-const selectStyle = 'padding:6px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;background:#fff;color:var(--aubergine);cursor:pointer;min-width:120px'
+const selectStyle = 'padding:6px 10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.85rem;background:#fff;color:var(--aubergine);cursor:pointer;min-width:110px'
 
 function fmt(n) {
   return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })

@@ -11,6 +11,10 @@ import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringE
 import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 
 export function Dashboard({ user }) {
+  const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
+  const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
+  const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+
   let employees   = []
   let evaluations = []
   let activeLocation = 'all'
@@ -18,8 +22,10 @@ export function Dashboard({ user }) {
   let container = null
 
   async function loadData() {
+    let empQuery = supabase.from('profiles').select('*').eq('role', 'employee').order('full_name')
+    if (forcedLocSlug) empQuery = empQuery.eq('location', forcedLocSlug)
     const [empRes, evalRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
+      empQuery,
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
     ])
     employees   = empRes.data  ?? []
@@ -232,11 +238,13 @@ export function Dashboard({ user }) {
         <p style="color:var(--text-light);font-size:0.875rem">Studio 358 – Manager Übersicht</p>
       </div>
 
+      ${!forcedLocSlug ? `
       <div class="location-tabs">
         <button class="location-tab ${activeLocation === 'all'    ? 'active' : ''}" data-loc="all">Alle</button>
         <button class="location-tab ${activeLocation === 'mitte'  ? 'active' : ''}" data-loc="mitte">Mitte</button>
         <button class="location-tab ${activeLocation === 'kadewe' ? 'active' : ''}" data-loc="kadewe">KaDeWe</button>
       </div>
+      ` : ''}
 
       ${buildStatCards(stats)}
 
@@ -318,6 +326,7 @@ export function Dashboard({ user }) {
     container = el
 
     await loadData()
+    if (forcedLocSlug) activeLocation = forcedLocSlug
     el.innerHTML = buildHTML()
     attachEvents()
 

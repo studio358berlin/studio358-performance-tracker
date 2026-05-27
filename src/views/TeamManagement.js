@@ -8,11 +8,15 @@ import { calculatePerformance, mapEntryToEngine, calcQPI } from '../lib/scoringE
 import { buildComparisonCard } from '../lib/buildComparisonCard.js'
 
 export function TeamManagement({ user }) {
+  const STUDIO_SLUG   = { 'KaDeWe': 'kadewe', 'Studio Mitte': 'mitte' }
+  const mgrHomeStudio = user?.profile?.role === 'manager' ? (user?.profile?.home_studio ?? null) : null
+  const forcedLocSlug = mgrHomeStudio ? (STUDIO_SLUG[mgrHomeStudio] ?? null) : null
+
   let employees      = []
   let evaluations    = []
   let employeeHours  = []   // employee_daily_hours rows for current month
   let monthlyTargets = []   // employee_monthly_targets for current month
-  let activeLocation = localStorage.getItem('activeLocation') || 'all'
+  let activeLocation = forcedLocSlug ?? localStorage.getItem('activeLocation') ?? 'all'
   let view           = 'list'
   let selectedEmployee = null
   let showAddForm       = false
@@ -28,7 +32,9 @@ export function TeamManagement({ user }) {
     const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
 
     const [empRes, evalRes, logsRes, hoursRes, targetsRes, skillsRes, empSkillsRes, apptsRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
+      forcedLocSlug
+        ? supabase.from('profiles').select('*').eq('role', 'employee').eq('location', forcedLocSlug).order('full_name')
+        : supabase.from('profiles').select('*').eq('role', 'employee').order('full_name'),
       supabase.from('performance_entries').select('*').order('created_at', { ascending: false }),
       supabase.from('daily_revenue_logs').select('employee_id, tip').gte('created_at', firstOfMonth),
       supabase.from('employee_daily_hours')
