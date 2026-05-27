@@ -1,11 +1,9 @@
 import { supabase } from '../lib/supabase.js'
 
-// Supabase-Migration erforderlich (einmalig ausführen):
+// Supabase-Migration (einmalig, falls noch nicht ausgeführt):
 // ALTER TABLE employee_daily_hours
 //   ADD COLUMN IF NOT EXISTS location TEXT,
-//   ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER DEFAULT 0,
-//   ADD COLUMN IF NOT EXISTS start_time TEXT,
-//   ADD COLUMN IF NOT EXISTS end_time TEXT;
+//   ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER DEFAULT 0;
 
 export function DailyCheckout({ user, onNavigate }) {
   const isManager     = user?.profile?.is_manager || user?.profile?.role === 'manager'
@@ -147,16 +145,15 @@ export function DailyCheckout({ user, onNavigate }) {
 
   function buildHoursDisplayLine(entry) {
     if (!entry) return ''
+    const hw       = entry.hours_worked ?? 0
+    const h        = Math.floor(hw)
+    const m        = Math.round((hw - h) * 60)
     const locName  = entry.location ?? locations.find(l => l.id === entry.location_id)?.name ?? ''
     const lunchMin = entry.lunch_break_minutes ?? entry.break_minutes ?? 0
-    const pauseStr = lunchMin > 0 ? `${lunchMin} Min Pause` : 'Keine Pause'
     const locPart  = locName ? ` | ${locName}` : ''
-    if (entry.start_time && entry.end_time) {
-      return `${entry.start_time} - ${entry.end_time} Uhr${locPart} | ${pauseStr}`
-    }
-    const h = Math.floor(entry.hours_worked ?? 0)
-    const m = Math.round(((entry.hours_worked ?? 0) - h) * 60)
-    return `${h} Std. ${m} Min.${locPart} | ${pauseStr}`
+    const pauseStr = lunchMin > 0 ? `${lunchMin} Min. Pause` : 'Keine Pause'
+    const workStr  = m > 0 ? `${h} Std. ${m} Min. gearbeitet` : `${h} Std. gearbeitet`
+    return `${workStr}${locPart} | ${pauseStr}`
   }
 
   // ── Save / delete ─────────────────────────────────────────────────────────────
@@ -265,17 +262,16 @@ export function DailyCheckout({ user, onNavigate }) {
     rerender()
   }
 
-  // saveHours: Optionen-Objekt mit startTime, endTime, lunchBreakMins, locationId, locationName, isManualEdit
+  // saveHours: speichert Gesamtstunden (Dezimalzahl) + Pause + Standort
   async function saveHours({
-    startTime      = null,
-    endTime        = null,
+    totalHours     = 8,
     lunchBreakMins = 0,
     locationId     = null,
     locationName   = null,
     isManualEdit   = false,
   } = {}) {
     const today = localDate()
-    const h     = (startTime && endTime) ? calcHoursFromTimes(startTime, endTime) : (hoursToday?.hours_worked ?? 8)
+    const h     = Math.max(0, totalHours)
     const b     = Math.max(0, lunchBreakMins)
 
     const payload = {
@@ -287,8 +283,6 @@ export function DailyCheckout({ user, onNavigate }) {
       location_id:         locationId,
       location:            locationName,
     }
-    if (startTime) payload.start_time = startTime
-    if (endTime)   payload.end_time   = endTime
 
     if (isManualEdit && hoursToday) {
       payload.is_modified = true
@@ -318,7 +312,6 @@ export function DailyCheckout({ user, onNavigate }) {
   }
 
   // ── Arbeitszeit-Erfassungs-Formular ───────────────────────────────────────────
-  // Einheitliches Modal für Ersterfassung und Bearbeitung
 
   function openHoursFormModal() {
     const overlay = document.createElement('div')
@@ -332,15 +325,22 @@ export function DailyCheckout({ user, onNavigate }) {
     const singleLoc   = allowedLocs.length === 1 ? allowedLocs[0] : null
 
     const isEdit     = !!hoursToday
-    const existStart = hoursToday?.start_time ?? '09:00'
-    const existEnd   = hoursToday?.end_time   ?? '17:00'
+    const existHW    = hoursToday?.hours_worked ?? 8
+    const existH     = Math.floor(existHW)
+    const existMRaw  = Math.round((existHW - existH) * 60)
+    // Auf 15-Minuten-Raster runden
+    const existM     = Math.round(existMRaw / 15) * 15 < 60
+      ? Math.round(existMRaw / 15) * 15
+      : 45
     const curLunch   = hoursToday?.lunch_break_minutes ?? hoursToday?.break_minutes ?? 0
     const curLocId   = hoursToday?.location_id ?? null
     const curLocName = hoursToday?.location    ?? null
 
-    const timeSlots = generateTimeSlots()
-
-    const LUNCH_OPTIONS = [
+    // Stunden-Optionen: 0–14
+    const HOUR_OPTS  = Array.from({ length: 15 }, (_, i) => i)
+    // Minuten-Optionen: 00, 15, 30, 45
+    const MIN_OPTS   = [0, 15, 30, 45]
+    const LUNCH_OPTS = [
       { value: 0,  label: 'Keine Pause' },
       { value: 15, label: '15 Min'      },
       { value: 30, label: '30 Min'      },
@@ -348,14 +348,16 @@ export function DailyCheckout({ user, onNavigate }) {
       { value: 60, label: '60 Min'      },
     ]
 
+    const selectStyle = 'padding:10px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;font-weight:700;color:var(--aubergine);background:var(--white);text-align:center;-webkit-appearance:auto;cursor:pointer'
+
     overlay.innerHTML = `
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:360px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px 0">
           <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">${isEdit ? 'Arbeitszeit bearbeiten' : 'Arbeitszeit erfassen'}</h3>
-          <button id="hf-close" style="background:none;border:none;font-size:0.85rem;cursor:pointer;color:var(--text-light);padding:4px 8px;font-weight:700;letter-spacing:0.05em">X</button>
+          <button id="hf-close" style="background:none;border:none;font-size:0.85rem;cursor:pointer;color:var(--text-light);padding:4px 8px;font-weight:700">X</button>
         </div>
 
-        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:16px">
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:18px">
 
           <!-- A) Standort -->
           ${singleLoc ? `
@@ -367,7 +369,7 @@ export function DailyCheckout({ user, onNavigate }) {
               <div style="font-size:0.85rem;font-weight:600;color:var(--text-mid);margin-bottom:8px">
                 Standort <span style="color:var(--terracotta)">*</span>
               </div>
-              <div style="display:flex;flex-direction:column;gap:6px" id="hf-studio-options">
+              <div style="display:flex;flex-direction:column;gap:6px">
                 ${allowedLocs.map(l => {
                   const sel = curLocName === l.name || curLocId === l.id
                   return `
@@ -380,32 +382,32 @@ export function DailyCheckout({ user, onNavigate }) {
             </div>
           `}
 
-          <!-- B) Arbeitsbeginn -->
-          <label style="display:flex;flex-direction:column;gap:6px;font-size:0.85rem;font-weight:600;color:var(--text-mid)">
-            Arbeitsbeginn
-            <select id="hf-start"
-              style="padding:10px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;font-weight:700;color:var(--aubergine);background:var(--white);-webkit-appearance:auto">
-              ${timeSlots.map(t => `<option value="${t}" ${t === existStart ? 'selected' : ''}>${t} Uhr</option>`).join('')}
-            </select>
-          </label>
+          <!-- B) Reine Arbeitszeit: Stunden + Minuten nebeneinander -->
+          <div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text-mid);margin-bottom:8px">Reine Arbeitszeit</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:0.75rem;color:var(--text-light);text-align:center">Stunden</span>
+                <select id="hf-hours" style="${selectStyle}">
+                  ${HOUR_OPTS.map(h => `<option value="${h}" ${h === existH ? 'selected' : ''}>${h} Std.</option>`).join('')}
+                </select>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:0.75rem;color:var(--text-light);text-align:center">Minuten</span>
+                <select id="hf-mins" style="${selectStyle}">
+                  ${MIN_OPTS.map(m => `<option value="${m}" ${m === existM ? 'selected' : ''}>${String(m).padStart(2,'0')} Min</option>`).join('')}
+                </select>
+              </div>
+            </div>
+          </div>
 
-          <!-- C) Arbeitsende -->
-          <label style="display:flex;flex-direction:column;gap:6px;font-size:0.85rem;font-weight:600;color:var(--text-mid)">
-            Arbeitsende
-            <select id="hf-end"
-              style="padding:10px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;font-weight:700;color:var(--aubergine);background:var(--white);-webkit-appearance:auto">
-              ${timeSlots.map(t => `<option value="${t}" ${t === existEnd ? 'selected' : ''}>${t} Uhr</option>`).join('')}
+          <!-- C) Mittagspause -->
+          <div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text-mid);margin-bottom:8px">Mittagspause</div>
+            <select id="hf-lunch" style="${selectStyle};width:100%">
+              ${LUNCH_OPTS.map(o => `<option value="${o.value}" ${o.value === curLunch ? 'selected' : ''}>${o.label}</option>`).join('')}
             </select>
-          </label>
-
-          <!-- D) Mittagspause -->
-          <label style="display:flex;flex-direction:column;gap:6px;font-size:0.85rem;font-weight:600;color:var(--text-mid)">
-            Mittagspause
-            <select id="hf-lunch"
-              style="padding:10px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.95rem;font-weight:600;background:var(--white);color:var(--aubergine);-webkit-appearance:auto">
-              ${LUNCH_OPTIONS.map(o => `<option value="${o.value}" ${o.value === curLunch ? 'selected' : ''}>${o.label}</option>`).join('')}
-            </select>
-          </label>
+          </div>
 
           <!-- Netto-Vorschau -->
           <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;font-size:0.85rem;color:var(--text-mid)">
@@ -425,26 +427,27 @@ export function DailyCheckout({ user, onNavigate }) {
 
     document.body.appendChild(overlay)
 
-    const startSel = overlay.querySelector('#hf-start')
-    const endSel   = overlay.querySelector('#hf-end')
+    const hoursSel = overlay.querySelector('#hf-hours')
+    const minsSel  = overlay.querySelector('#hf-mins')
     const lunchSel = overlay.querySelector('#hf-lunch')
     const netDisp  = overlay.querySelector('#hf-net')
 
     function updateNet() {
-      const h = calcHoursFromTimes(startSel.value, endSel.value)
-      const b = parseInt(lunchSel.value, 10) / 60
-      const net = Math.max(0, h - b)
-      netDisp.textContent = net > 0 ? net.toFixed(1) + ' Std.' : '—'
+      const h     = parseInt(hoursSel.value, 10)
+      const m     = parseInt(minsSel.value,  10)
+      const lunch = parseInt(lunchSel.value,  10)
+      const total = h + m / 60
+      const net   = Math.max(0, total - lunch / 60)
+      netDisp.textContent = net > 0 ? fmtHours(net) : '0 Std.'
     }
     updateNet()
-    startSel.addEventListener('change', updateNet)
-    endSel.addEventListener('change',   updateNet)
+    hoursSel.addEventListener('change', updateNet)
+    minsSel.addEventListener('change',  updateNet)
     lunchSel.addEventListener('change', updateNet)
 
     overlay.querySelector('#hf-close').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
-    // Vorausgewählter Standort: Einzelstudio auto, Bearbeiten pre-fill, sonst muss Mitarbeiter wählen
     let selLocId   = singleLoc?.id   ?? curLocId   ?? null
     let selLocName = singleLoc?.name ?? curLocName ?? null
 
@@ -472,24 +475,22 @@ export function DailyCheckout({ user, onNavigate }) {
     })
 
     overlay.querySelector('#hf-save').addEventListener('click', async () => {
-      const start = startSel.value
-      const end   = endSel.value
-
       if (!selLocId) {
         showToast('Bitte zuerst einen Standort auswählen.', 'error'); return
       }
-      if (calcHoursFromTimes(start, end) <= 0) {
-        showToast('Arbeitsende muss nach dem Arbeitsbeginn liegen.', 'error'); return
+      const h     = parseInt(hoursSel.value, 10)
+      const m     = parseInt(minsSel.value,  10)
+      const total = h + m / 60
+      if (total <= 0) {
+        showToast('Bitte eine Arbeitszeit von mindestens 15 Minuten angeben.', 'error'); return
       }
-
       const lunch   = parseInt(lunchSel.value, 10)
       const saveBtn = overlay.querySelector('#hf-save')
       saveBtn.disabled = true
       saveBtn.textContent = 'Wird gespeichert...'
 
       const ok = await saveHours({
-        startTime:      start,
-        endTime:        end,
+        totalHours:     total,
         lunchBreakMins: lunch,
         locationId:     selLocId,
         locationName:   selLocName,
@@ -557,28 +558,22 @@ export function DailyCheckout({ user, onNavigate }) {
     let subLine = ''
 
     if (hoursToday) {
-      if (hoursToday.start_time && hoursToday.end_time) {
-        timeStr = `${hoursToday.start_time} – ${hoursToday.end_time} Uhr`
-      } else {
-        const h = Math.floor(hoursToday.hours_worked)
-        const m = Math.round((hoursToday.hours_worked - h) * 60)
-        timeStr = `${h} Std. ${m} Min.`
-      }
+      timeStr = fmtHours(hoursToday.hours_worked ?? 0)
       const lunchMin  = hoursToday.lunch_break_minutes ?? hoursToday.break_minutes ?? 0
       const locName   = hoursToday.location ?? locations.find(l => l.id === hoursToday.location_id)?.name ?? ''
       const treatMins = todayLogs
         .filter(l => !l.is_cancelled && !l.is_no_show)
         .reduce((s, l) => s + Number(l.treatment?.duration ?? treatments.find(t => t.id === l.treatment_id)?.duration ?? 60), 0)
-      const netMins = Math.max(1, hoursToday.hours_worked * 60 - lunchMin)
+      const netMins = Math.max(1, (hoursToday.hours_worked ?? 0) * 60 - lunchMin)
       const util    = Math.round((treatMins / netMins) * 100)
       const uCol    = util >= 80 ? '#27AE60' : util >= 50 ? 'var(--gold)' : 'var(--terracotta)'
-      const netH    = Math.max(0, hoursToday.hours_worked - lunchMin / 60).toFixed(1)
+      const netH    = Math.max(0, (hoursToday.hours_worked ?? 0) - lunchMin / 60)
       subLine = `
         <div style="font-size:0.78rem;color:var(--text-mid);margin-top:4px">
-          Netto: <strong style="color:var(--aubergine)">${netH} Std.</strong>
+          Netto: <strong style="color:var(--aubergine)">${fmtHours(netH)}</strong>
           &nbsp;&middot;&nbsp; Auslastung: <strong style="color:${uCol}">${util}%</strong>
           ${locName ? `&nbsp;&middot;&nbsp; <strong style="color:var(--aubergine)">${locName}</strong>` : ''}
-          &nbsp;&middot;&nbsp; ${lunchMin > 0 ? lunchMin + ' Min Pause' : 'Keine Pause'}
+          &nbsp;&middot;&nbsp; ${lunchMin > 0 ? lunchMin + ' Min. Pause' : 'Keine Pause'}
         </div>`
     }
 
@@ -586,7 +581,7 @@ export function DailyCheckout({ user, onNavigate }) {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;margin-bottom:16px;background:var(--cream);border-radius:var(--radius-md)">
         <div>
           <div style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-light);margin-bottom:5px">Heute erfasst</div>
-          <div style="font-size:1.35rem;font-weight:700;color:var(--aubergine);line-height:1.2">${timeStr}</div>
+          <div style="font-size:1.45rem;font-weight:700;color:var(--aubergine);line-height:1.2">${timeStr}</div>
           ${subLine}
         </div>
         <button id="btn-log-hours" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:7px 13px;font-size:0.82rem">Bearbeiten</button>
@@ -610,12 +605,9 @@ export function DailyCheckout({ user, onNavigate }) {
       `
     }
 
-    const lunchMin = hoursToday.lunch_break_minutes ?? hoursToday.break_minutes ?? 0
-    const netH     = Math.max(0, Number(hoursToday.hours_worked) - lunchMin / 60).toFixed(1)
-    const timeRange = (hoursToday.start_time && hoursToday.end_time)
-      ? `${hoursToday.start_time} – ${hoursToday.end_time} Uhr`
-      : `${Number(hoursToday.hours_worked)} Std.`
-    const locName = hoursToday.location ?? locations.find(l => l.id === hoursToday.location_id)?.name ?? ''
+    const lunchMin  = hoursToday.lunch_break_minutes ?? hoursToday.break_minutes ?? 0
+    const netH      = Math.max(0, (hoursToday.hours_worked ?? 0) - lunchMin / 60)
+    const locName   = hoursToday.location ?? locations.find(l => l.id === hoursToday.location_id)?.name ?? ''
 
     return `
       <div style="
@@ -625,7 +617,7 @@ export function DailyCheckout({ user, onNavigate }) {
         box-shadow:0 2px 10px rgba(0,0,0,0.18);
       ">
         <span style="font-size:0.95rem;font-weight:700">Arbeitszeit erfasst</span>
-        <span style="font-size:0.8rem;opacity:0.9">${timeRange}${locName ? ' · ' + locName : ''} · ${netH} Std. Netto</span>
+        <span style="font-size:0.8rem;opacity:0.9">${fmtHours(hoursToday.hours_worked ?? 0)}${locName ? ' · ' + locName : ''} · Netto ${fmtHours(netH)}</span>
       </div>
     `
   }
@@ -1305,9 +1297,8 @@ export function DailyCheckout({ user, onNavigate }) {
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
 
-    // Arbeitszeit-Formular – sowohl Banner (Ersterfassung) als auch Bearbeiten-Button
+    // Arbeitszeit-Formular – Banner (Ersterfassung) mit SOP-Gate
     container.querySelector('#btn-hours-banner')?.addEventListener('click', async () => {
-      // SOP-Gate vor Ersterfassung prüfen
       try {
         const { data: unread } = await supabase.rpc('get_unread_mandatory_articles', { target_employee_id: user.id })
         if (unread && unread.length > 0) {
@@ -1317,6 +1308,8 @@ export function DailyCheckout({ user, onNavigate }) {
       } catch (_) { /* RPC noch nicht verfügbar */ }
       openHoursFormModal()
     })
+
+    // Bearbeiten-Button im Heute-erfasst-Widget
     container.querySelector('#btn-log-hours')?.addEventListener('click', () => openHoursFormModal())
 
     container.querySelectorAll('.btn-edit-log[data-id]').forEach(btn => {
@@ -1381,29 +1374,17 @@ function fmt(n) {
   return Number(n ?? 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
+// Formatiert Dezimalstunden als "X Std. Y Min." (ohne führende 0 bei Y=0)
+function fmtHours(decimalHours) {
+  const h = Math.floor(decimalHours)
+  const m = Math.round((decimalHours - h) * 60)
+  if (m === 0) return `${h} Std.`
+  return `${h} Std. ${m} Min.`
+}
+
 function localDate() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
-
-// Generiert Zeitslots im 15-Minuten-Takt von 05:00 bis 23:45
-function generateTimeSlots() {
-  const slots = []
-  for (let h = 5; h <= 23; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`)
-    }
-  }
-  slots.push('23:45')
-  return slots
-}
-
-function calcHoursFromTimes(start, end) {
-  if (!start || !end) return 0
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  const diff = (eh * 60 + em) - (sh * 60 + sm)
-  return diff > 0 ? diff / 60 : 0
 }
 
 function showToast(message, type = 'success') {
