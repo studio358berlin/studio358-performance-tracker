@@ -663,8 +663,9 @@ export function DailyCheckout({ user, onNavigate }) {
     const currentLocName  = (selectedLocationId && selectedLocationId !== 'all')
       ? (locations.find(l => l.id === selectedLocationId)?.name ?? null)
       : null
-    const filteredByLoc   = currentLocName
-      ? employees.filter(e => (e.assigned_studios ?? []).includes(currentLocName))
+    const locNameLower    = currentLocName?.toLowerCase() ?? null
+    const filteredByLoc   = locNameLower
+      ? employees.filter(e => (e.assigned_studios ?? []).some(s => s.toLowerCase() === locNameLower))
       : employees
     const modalEmployees  = filteredByLoc.length ? filteredByLoc : employees
 
