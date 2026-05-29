@@ -14,7 +14,9 @@ export function DailyCheckout({ user, onNavigate }) {
   function isEmpVisible(emp) {
     if (!mgrStudios)        return true
     if (!mgrStudios.length) return true
-    return mgrStudios.some(s => (emp.assigned_studios ?? []).includes(s))
+    return mgrStudios.some(s =>
+      (emp.assigned_studios ?? []).some(es => es.toLowerCase() === s.toLowerCase())
+    )
   }
 
   let locations          = []
@@ -775,6 +777,30 @@ export function DailyCheckout({ user, onNavigate }) {
     `
 
     document.body.appendChild(overlay)
+
+    // Frischer Mitarbeiter-Fetch beim Modal-Öffnen – unabhängig vom vorgeladenen State
+    if (isManager) {
+      const empSelect = overlay.querySelector('#modal-employee')
+      if (empSelect) {
+        ;(async () => {
+          const { data } = await supabase
+            .from('profiles')
+            .select('id,full_name,assigned_studios')
+            .eq('role', 'employee')
+            .order('full_name')
+          const all      = data ?? []
+          const filtered = locNameLower
+            ? all.filter(e => (e.assigned_studios ?? []).some(s => s.toLowerCase() === locNameLower))
+            : all
+          const toShow   = filtered.length ? filtered : all
+          empSelect.innerHTML =
+            '<option value="">– Mitarbeiter wählen –</option>' +
+            toShow.map(e =>
+              `<option value="${e.id}" ${e.id === curEmpId ? 'selected' : ''}>${e.full_name}</option>`
+            ).join('')
+        })()
+      }
+    }
 
     const upsellInput  = overlay.querySelector('#modal-upsell')
     const tipInput     = overlay.querySelector('#modal-tip')
