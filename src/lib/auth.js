@@ -1,8 +1,35 @@
 import { supabase } from './supabase.js'
 
+function parseUserAgent(ua) {
+  const os =
+    /iPhone|iPad/.test(ua) ? 'iOS'
+    : /Android/.test(ua)   ? 'Android'
+    : /Windows/.test(ua)   ? 'Windows'
+    : /Mac OS/.test(ua)    ? 'macOS'
+    : /Linux/.test(ua)     ? 'Linux'
+    : 'Unbekannt'
+  const browser =
+    /Edg\//.test(ua)         ? 'Edge'
+    : /OPR\/|Opera/.test(ua) ? 'Opera'
+    : /Chrome\//.test(ua)    ? 'Chrome'
+    : /Firefox\//.test(ua)   ? 'Firefox'
+    : /Safari\//.test(ua)    ? 'Safari'
+    : 'Unbekannt'
+  return `${os} / ${browser}`
+}
+
 export async function login(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw error
+
+  supabase.from('login_history').insert({
+    user_id:      data.user?.id,
+    email,
+    logged_in_at: new Date().toISOString(),
+    user_agent:   navigator.userAgent,
+    device_info:  parseUserAgent(navigator.userAgent),
+  }).then(() => {}).catch(() => {})
+
   return data
 }
 

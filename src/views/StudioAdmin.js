@@ -20,6 +20,9 @@ export function StudioAdmin({ user }) {
   let reportLogs  = []
   let reportHours = []
 
+  let activeStaffSubTab = 'users'
+  let loginHistory      = []
+
   // ── Guard ────────────────────────────────────────────────────────────────────
   if (!isManager) {
     return {
@@ -73,6 +76,16 @@ export function StudioAdmin({ user }) {
     ])
     reportLogs  = logsRes.data  ?? []
     reportHours = hoursRes.data ?? []
+  }
+
+  async function loadLoginHistory() {
+    const { data, error } = await supabase
+      .from('login_history')
+      .select('*')
+      .order('logged_in_at', { ascending: false })
+      .limit(200)
+    if (error) { showToast('Login-Protokolle konnten nicht geladen werden.', 'error'); loginHistory = []; return }
+    loginHistory = data ?? []
   }
 
   // ── Treatment CRUD ───────────────────────────────────────────────────────────
@@ -392,6 +405,86 @@ export function StudioAdmin({ user }) {
     `
   }
 
+  function buildStaffSection() {
+    const subTabs = [
+      { id: 'users',      label: '[ Mitarbeiter-Verwaltung ]' },
+      { id: 'login-logs', label: '[ Login-Protokolle ]'       },
+      { id: 'profile',    label: '[ Mein Profil ]'            },
+    ]
+    return `
+      <div class="location-tabs" style="margin-bottom:20px">
+        ${subTabs.map(t => `
+          <button class="location-tab staff-sub-tab ${activeStaffSubTab === t.id ? 'active' : ''}" data-subtab="${t.id}">
+            ${t.label}
+          </button>
+        `).join('')}
+      </div>
+      ${activeStaffSubTab === 'users'
+        ? buildStaffPanel()
+        : activeStaffSubTab === 'login-logs'
+          ? buildLoginHistoryPanel()
+          : buildAdminProfilePanel()}
+    `
+  }
+
+  function buildLoginHistoryPanel() {
+    if (!loginHistory.length) {
+      return `<div class="empty-state" style="padding:48px 20px"><p>Noch keine Login-Protokolle vorhanden.</p></div>`
+    }
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h4>Login-Protokolle</h4>
+          <span style="font-size:0.78rem;color:var(--text-light)">${loginHistory.length} Einträge</span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Datum / Uhrzeit</th>
+                <th>Mitarbeiter</th>
+                <th>E-Mail</th>
+                <th>Gerät / Browser</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${loginHistory.map(entry => `
+                <tr>
+                  <td style="white-space:nowrap;color:var(--text-mid);font-size:0.82rem">
+                    ${new Date(entry.logged_in_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                  </td>
+                  <td style="font-weight:500;color:var(--aubergine)">
+                    ${staffProfiles.find(p => p.id === entry.user_id)?.full_name ?? '–'}
+                  </td>
+                  <td style="color:var(--text-mid);font-size:0.84rem">${entry.email ?? '–'}</td>
+                  <td style="color:var(--text-mid);font-size:0.84rem">${entry.device_info ?? '–'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
+  }
+
+  function buildAdminProfilePanel() {
+    return `
+      <div class="card" style="max-width:440px">
+        <h4 style="margin-bottom:20px;color:var(--aubergine)">Passwort ändern</h4>
+        <div class="form-group">
+          <label class="form-label" for="admin-new-pw">Neues Passwort</label>
+          <input id="admin-new-pw" type="password" class="form-input" placeholder="Mindestens 6 Zeichen" autocomplete="new-password" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="admin-confirm-pw">Passwort bestätigen</label>
+          <input id="admin-confirm-pw" type="password" class="form-input" placeholder="Passwort wiederholen" autocomplete="new-password" />
+        </div>
+        <div id="admin-pw-msg" style="display:none;margin-bottom:16px;font-size:0.875rem;padding:10px 14px;border-radius:var(--radius-sm)"></div>
+        <button id="admin-pw-btn" class="btn btn-primary" style="width:100%">[ Passwort aktualisieren ]</button>
+      </div>
+    `
+  }
+
   function buildHTML() {
     return `
       <div class="page-header">
@@ -410,7 +503,7 @@ export function StudioAdmin({ user }) {
       ${activeTab === 'treatments' ? buildTreatmentsPanel()
       : activeTab === 'locations'  ? buildLocationsPanel()
       : activeTab === 'skills'     ? buildSkillsPanel()
-      : activeTab === 'staff'      ? buildStaffPanel()
+      : activeTab === 'staff'      ? buildStaffSection()
       : buildReportsPanel()}
     `
   }
@@ -642,7 +735,7 @@ export function StudioAdmin({ user }) {
         if (tab === 'staff' && !isAdmin) return
         activeTab = tab; editingTreatment = undefined; editingLocation = undefined
         if (tab === 'reports') { container.innerHTML = buildHTML(); await loadReportData() }
-        else if (tab === 'staff') { await loadStaffData() }
+        else if (tab === 'staff') { activeStaffSubTab = 'users'; await loadStaffData() }
         rerender()
       })
     })
@@ -782,6 +875,57 @@ export function StudioAdmin({ user }) {
     container.querySelectorAll('.staff-toggle-btn[data-id]').forEach(btn => {
       btn.addEventListener('click', () => toggleActive(btn.dataset.id, btn.dataset.active === 'true'))
     })
+
+    // Staff: sub-tab navigation
+    container.querySelectorAll('.staff-sub-tab[data-subtab]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        activeStaffSubTab = btn.dataset.subtab
+        if (activeStaffSubTab === 'login-logs') {
+          if (!staffProfiles.length) await loadStaffData()
+          await loadLoginHistory()
+        }
+        rerender()
+      })
+    })
+
+    // Staff: admin password change
+    const adminPwBtn = container.querySelector('#admin-pw-btn')
+    if (adminPwBtn) {
+      adminPwBtn.addEventListener('click', async () => {
+        const pwEl  = container.querySelector('#admin-new-pw')
+        const cfEl  = container.querySelector('#admin-confirm-pw')
+        const msgEl = container.querySelector('#admin-pw-msg')
+
+        const pw = pwEl.value
+        const cf = cfEl.value
+        msgEl.style.display = 'none'
+
+        function showMsg(text, isError) {
+          msgEl.textContent      = text
+          msgEl.style.display    = 'block'
+          msgEl.style.background = isError ? '#fdecea' : '#e8f2e9'
+          msgEl.style.color      = isError ? '#8b2e1a' : '#3a6b3f'
+          msgEl.style.border     = `1px solid ${isError ? 'var(--terracotta)' : '#6B8F71'}`
+        }
+
+        if (!pw || !cf)    { showMsg('Bitte alle Felder ausfüllen.', true); return }
+        if (pw !== cf)     { showMsg('Die Passwörter stimmen nicht überein.', true); return }
+        if (pw.length < 6) { showMsg('Das Passwort muss mindestens 6 Zeichen lang sein.', true); return }
+
+        adminPwBtn.disabled    = true
+        adminPwBtn.textContent = '[ Wird gespeichert... ]'
+        const { error } = await supabase.auth.updateUser({ password: pw })
+        adminPwBtn.disabled    = false
+        adminPwBtn.textContent = '[ Passwort aktualisieren ]'
+
+        if (error) { showMsg(error.message, true) }
+        else {
+          showMsg('Passwort erfolgreich aktualisiert.', false)
+          pwEl.value = ''
+          cfEl.value = ''
+        }
+      })
+    }
   }
 
   function rerender() {
