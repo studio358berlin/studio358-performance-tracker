@@ -9,6 +9,7 @@ import { DailyCheckout }   from './views/DailyCheckout.js'
 import { StudioAdmin }     from './views/StudioAdmin.js'
 import { RevenueAnalytics }from './views/RevenueAnalytics.js'
 import { Sidebar }         from './components/Sidebar.js'
+import { MyProfile }      from './views/MyProfile.js'
 
 const MOBILE_BP = 1024   // px — below this: no sidebar in DOM at all
 
@@ -255,6 +256,8 @@ async function loadView(viewId) {
       el = await SOPView({ user: currentUser }).render()
     } else if (viewId === 'admin' && isManager()) {
       el = await StudioAdmin({ user: currentUser }).render()
+    } else if (viewId === 'profile') {
+      el = MyProfile({ user: currentUser }).render()
     } else {
       el = await DailyCheckout({ user: currentUser, onNavigate: navigateTo }).render()
     }
@@ -284,6 +287,7 @@ const VIEW_NAMES = {
   sops:              'Wissensdatenbank',
   'my-performance':  'Meine Performance',
   admin:             'Studio-Admin',
+  profile:           'Mein Profil',
 }
 function viewName(id) { return VIEW_NAMES[id] ?? 'Studio 358' }
 

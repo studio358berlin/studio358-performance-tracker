@@ -11,12 +11,14 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
     { id: 'team',      label: 'Team Management'    },
     { id: 'sops',      label: 'Studio Guide'       },
     { id: 'admin',     label: 'Studio Admin'        },
+    { id: 'profile',   label: 'Mein Profil'        },
   ]
 
   const employeeNav = [
     { id: 'checkout',       label: 'Tagesabschluss'    },
     { id: 'my-performance', label: 'Performance Tracker' },
     { id: 'sops',           label: 'Studio Guide'       },
+    { id: 'profile',        label: 'Mein Profil'        },
   ]
 
   const navItems = isManager ? managerNav : employeeNav
