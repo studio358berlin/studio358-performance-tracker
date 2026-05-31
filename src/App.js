@@ -24,7 +24,12 @@ let lastWasMobile = window.innerWidth < MOBILE_BP
 
 async function init() {
   renderLoading()
-  currentUser = await getCurrentUser()
+  try {
+    currentUser = await getCurrentUser()
+  } catch (_) {
+    renderLogin()
+    return
+  }
   if (!currentUser) { renderLogin(); return }
   renderApp('checkout')
 }

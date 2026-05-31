@@ -153,45 +153,16 @@ export function StudioAdmin({ user }) {
     if (p) p.assigned_studios = studios
   }
 
-  function confirmDeleteProfile(profileId) {
+  async function toggleActive(profileId, isCurrentlyActive) {
     const ownId = user?.id ?? user?.profile?.id
-    if (profileId === ownId) { showToast('Du kannst dein eigenes Profil nicht löschen.', 'error'); return }
-    const profile = staffProfiles.find(p => p.id === profileId)
-    showDeleteModal(profile)
-  }
-
-  function showDeleteModal(profile) {
-    const existing = document.getElementById('staff-delete-modal')
-    if (existing) existing.remove()
-
-    const overlay = document.createElement('div')
-    overlay.id = 'staff-delete-modal'
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55)'
-
-    overlay.innerHTML = `
-      <div style="background:#fff;border-radius:12px;padding:28px 24px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
-        <h4 style="margin:0 0 10px;color:var(--aubergine);font-size:1.05rem">Mitarbeiter löschen?</h4>
-        <p style="margin:0 0 8px;color:var(--text-mid);font-size:0.9rem;line-height:1.55">
-          Mitarbeiter wirklich löschen? Dadurch verliert die Person jeglichen Zugriff auf die App.
-        </p>
-        ${profile?.full_name ? `<p style="margin:0 0 20px;font-size:0.9rem"><strong style="color:var(--aubergine)">${profile.full_name}</strong> wird dauerhaft entfernt.</p>` : '<div style="margin-bottom:20px"></div>'}
-        <div style="display:flex;gap:10px;justify-content:flex-end">
-          <button id="modal-cancel-btn" class="btn btn-ghost btn-sm">Abbrechen</button>
-          <button id="modal-confirm-btn" class="btn btn-sm" style="background:var(--terracotta);color:#fff">Löschen</button>
-        </div>
-      </div>
-    `
-
-    overlay.querySelector('#modal-cancel-btn').addEventListener('click', () => overlay.remove())
-    overlay.querySelector('#modal-confirm-btn').addEventListener('click', async () => {
-      overlay.remove()
-      const { error } = await supabase.from('profiles').delete().eq('id', profile.id)
-      if (error) { showToast('Fehler: ' + error.message, 'error'); return }
-      showToast(`${profile?.full_name ?? 'Mitarbeiter'} wurde entfernt.`)
-      await loadStaffData(); rerender()
-    })
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
-    document.body.appendChild(overlay)
+    if (profileId === ownId) { showToast('Du kannst deinen eigenen Status nicht ändern.', 'error'); return }
+    const newValue = !isCurrentlyActive
+    const { error } = await supabase.from('profiles').update({ is_active: newValue }).eq('id', profileId)
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+    const p = staffProfiles.find(x => x.id === profileId)
+    if (p) p.is_active = newValue
+    showToast(newValue ? 'Mitarbeiter aktiviert.' : 'Mitarbeiter deaktiviert.')
+    rerender()
   }
 
   // ── CSV helpers ───────────────────────────────────────────────────────────────
@@ -379,7 +350,7 @@ export function StudioAdmin({ user }) {
                 <th>E-Mail</th>
                 <th>Aktuelle Rolle</th>
                 <th>Studios</th>
-                <th style="text-align:center">Aktion</th>
+                <th style="text-align:center">Status / Aktion</th>
               </tr>
             </thead>
             <tbody>
@@ -406,10 +377,11 @@ export function StudioAdmin({ user }) {
                   </td>
                   <td style="text-align:center">
                     <button
-                      class="staff-delete-btn btn btn-sm"
+                      class="staff-toggle-btn btn btn-sm"
                       data-id="${p.id}"
-                      style="background:var(--terracotta);color:#fff;font-size:0.78rem;padding:5px 12px;border:none;border-radius:var(--radius-sm);cursor:pointer"
-                    >[ Löschen ]</button>
+                      data-active="${p.is_active !== false}"
+                      style="font-size:0.78rem;padding:5px 12px;border-radius:var(--radius-sm);cursor:pointer;background:none;${p.is_active !== false ? 'border:1px solid #6B8F71;color:#3a6b3f' : 'border:1px solid var(--terracotta);color:var(--terracotta)'}"
+                    >${p.is_active !== false ? '[ Aktiv ]' : '[ Inaktiv ]'}</button>
                   </td>
                 </tr>
               `).join('')}
@@ -806,9 +778,9 @@ export function StudioAdmin({ user }) {
       })
     })
 
-    // Staff: delete
-    container.querySelectorAll('.staff-delete-btn[data-id]').forEach(btn => {
-      btn.addEventListener('click', () => confirmDeleteProfile(btn.dataset.id))
+    // Staff: toggle active/inactive
+    container.querySelectorAll('.staff-toggle-btn[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => toggleActive(btn.dataset.id, btn.dataset.active === 'true'))
     })
   }
 

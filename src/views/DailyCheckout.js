@@ -64,7 +64,7 @@ export function DailyCheckout({ user, onNavigate }) {
     const phase2 = [fetchTodayLogs()]
     if (isManager) {
       phase2.push(
-        supabase.from('profiles').select('id,full_name,assigned_studios').eq('role', 'employee').order('full_name')
+        supabase.from('profiles').select('id,full_name,assigned_studios').eq('role', 'employee').eq('is_active', true).order('full_name')
       )
     }
     const [logRes, empRes] = await Promise.all(phase2)
@@ -783,7 +783,7 @@ export function DailyCheckout({ user, onNavigate }) {
       const empSelect = overlay.querySelector('#modal-employee')
       if (empSelect) {
         ;(async () => {
-          const { data } = await supabase.from('profiles').select('*')
+          const { data } = await supabase.from('profiles').select('*').eq('is_active', true)
           const all      = (data ?? []).filter(p => p.full_name)
           const filtered = locNameLower
             ? all.filter(p => (p.assigned_studios ?? []).map(s => s.toLowerCase()).includes(locNameLower))

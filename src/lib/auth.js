@@ -26,6 +26,11 @@ export async function getCurrentUser() {
     return null
   }
 
+  if (profile.is_active === false) {
+    await supabase.auth.signOut()
+    throw new Error('Dieser Account wurde deaktiviert. Bitte wende dich an den Admin.')
+  }
+
   return { ...user, profile }
 }
 
