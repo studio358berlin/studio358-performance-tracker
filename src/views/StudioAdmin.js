@@ -103,9 +103,10 @@ export function StudioAdmin({ user }) {
     const { error } = id
       ? await supabase.from('treatments').update(payload).eq('id', id)
       : await supabase.from('treatments').insert(payload)
-    if (error) { showToast('Fehler: ' + error.message, 'error'); return }
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return false }
     showToast(id ? 'Behandlung aktualisiert.' : 'Behandlung erstellt.')
     await loadData(); editingTreatment = undefined; rerender()
+    return true
   }
 
   async function deactivateTreatment(id) {
@@ -241,6 +242,93 @@ export function StudioAdmin({ user }) {
       if (entry) entry.is_punctual = currentValue
       rerender()
     }
+  }
+
+  // ── Treatment edit modal ──────────────────────────────────────────────────────
+
+  function openEditTreatmentModal(treatmentId) {
+    const t = treatments.find(x => x.id === treatmentId)
+    if (!t) return
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100dvh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:460px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Behandlung bearbeiten</h3>
+          <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${(t.name ?? '').replace(/</g, '&lt;')}</div>
+        </div>
+        <div style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <label style="grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
+            Name *
+            <input id="et-name" type="text" value="${(t.name ?? '').replace(/"/g, '&quot;')}" placeholder="z.B. Shellac" style="${inputStyle}">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
+            Preis (EUR) *
+            <input id="et-price" type="number" min="0" step="0.01" value="${t.price ?? 0}" style="${inputStyle}">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
+            Dauer (Min.)
+            <input id="et-duration" type="number" min="1" value="${t.duration ?? 60}" style="${inputStyle}">
+          </label>
+          <label style="grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
+            Standort
+            <select id="et-location" style="${inputStyle}">
+              <option value="">Alle Standorte</option>
+              ${locations.map(l => `<option value="${l.id}" ${t.location_id === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}
+            </select>
+          </label>
+          <label style="grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:0.85rem;cursor:pointer">
+            <input id="et-active" type="checkbox" ${t.active !== false ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--aubergine)">
+            Aktiv
+          </label>
+          <div id="et-msg" style="display:none;grid-column:1/-1;font-size:0.875rem;padding:10px 14px;border-radius:var(--radius-sm)"></div>
+        </div>
+        <div style="padding:0 20px 20px;display:flex;gap:8px;flex-wrap:wrap">
+          <button id="et-save" class="btn btn-accent">[ Änderungen speichern ]</button>
+          <button id="et-cancel" class="btn btn-ghost">[ Abbrechen ]</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const msgEl   = overlay.querySelector('#et-msg')
+    const saveBtn = overlay.querySelector('#et-save')
+
+    function showMsg(text) {
+      msgEl.textContent      = text
+      msgEl.style.display    = 'block'
+      msgEl.style.background = '#fdecea'
+      msgEl.style.color      = '#8b2e1a'
+      msgEl.style.border     = '1px solid var(--terracotta)'
+    }
+
+    overlay.querySelector('#et-cancel').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    saveBtn.addEventListener('click', async () => {
+      const name       = overlay.querySelector('#et-name').value.trim()
+      const price      = overlay.querySelector('#et-price').value
+      const duration   = overlay.querySelector('#et-duration').value
+      const locationId = overlay.querySelector('#et-location').value
+      const active     = overlay.querySelector('#et-active').checked
+
+      msgEl.style.display = 'none'
+      if (!name) { showMsg('Name ist erforderlich.'); return }
+
+      saveBtn.disabled    = true
+      saveBtn.textContent = '[ Wird gespeichert... ]'
+
+      const ok = await saveTreatment({ name, price, duration, location_id: locationId, active }, treatmentId)
+      if (ok) {
+        overlay.remove()
+      } else {
+        saveBtn.disabled    = false
+        saveBtn.textContent = '[ Änderungen speichern ]'
+      }
+    })
   }
 
   // ── HTML builders ─────────────────────────────────────────────────────────────
@@ -825,7 +913,7 @@ export function StudioAdmin({ user }) {
     container.querySelector('#new-treatment-cta')?.addEventListener('click', () => { editingTreatment = null; rerender() })
     container.querySelector('#cancel-treatment-form')?.addEventListener('click', () => { editingTreatment = undefined; rerender() })
     container.querySelectorAll('.btn-edit-treat[data-id]').forEach(btn => {
-      btn.addEventListener('click', () => { editingTreatment = treatments.find(t => t.id === btn.dataset.id); rerender() })
+      btn.addEventListener('click', () => openEditTreatmentModal(btn.dataset.id))
     })
     container.querySelectorAll('.btn-deactivate-treat[data-id]').forEach(btn => {
       btn.addEventListener('click', () => deactivateTreatment(btn.dataset.id))
