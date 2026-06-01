@@ -200,7 +200,7 @@ export function TeamManagement({ user }) {
       email:    formData.email,
       password: tempPassword,
       options: {
-        data: { full_name: formData.full_name, role: 'employee' },
+        data: { full_name: formData.full_name, role: formData.role || 'employee' },
       },
     })
     if (authError) {
@@ -209,13 +209,13 @@ export function TeamManagement({ user }) {
     }
 
     const { error: profileError } = await supabase.from('profiles').insert({
-      id:        authData.user.id,
-      full_name: formData.full_name,
-      email:     formData.email,
-      role:      'employee',
-      location:  formData.location,
-      level:     formData.level || 'junior',
-      skills:    selectedSkills,
+      id:               authData.user.id,
+      full_name:        formData.full_name,
+      email:            formData.email,
+      role:             formData.role || 'employee',
+      assigned_studios: formData.assigned_studios ?? [],
+      level:            formData.level || 'junior',
+      skills:           selectedSkills,
     })
     if (profileError) {
       console.error('profiles INSERT fehlgeschlagen:', profileError)
@@ -927,18 +927,29 @@ export function TeamManagement({ user }) {
               <input class="form-input" type="password" name="password" placeholder="Mindestens 8 Zeichen" minlength="8" />
             </div>
             <div class="form-group">
-              <label class="form-label">Location</label>
-              <select class="form-select" name="location" required>
-                <option value="">– wählen –</option>
-                <option value="mitte">Studio Mitte</option>
-                <option value="kadewe">KaDeWe</option>
-              </select>
+              <label class="form-label">Studios *</label>
+              <div style="display:flex;gap:20px;margin-top:6px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.9rem;cursor:pointer">
+                  <input type="checkbox" name="studio_kadewe" style="width:15px;height:15px;accent-color:var(--aubergine)"> KaDeWe
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.9rem;cursor:pointer">
+                  <input type="checkbox" name="studio_mitte" style="width:15px;height:15px;accent-color:var(--aubergine)"> Studio Mitte
+                </label>
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">Level</label>
               <select class="form-select" name="level">
                 <option value="junior">Junior</option>
                 <option value="senior">Senior</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">System-Rolle *</label>
+              <select class="form-select" name="role">
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
               </select>
             </div>
           </div>
@@ -1712,7 +1723,12 @@ export function TeamManagement({ user }) {
       const selectedSkills = []
       e.target.querySelectorAll('.new-emp-skill-btn[data-active="true"]').forEach(b => selectedSkills.push(b.dataset.skill))
       try {
-        await addEmployee(Object.fromEntries(new FormData(e.target)), selectedSkills)
+        const formObj = Object.fromEntries(new FormData(e.target))
+        const assignedStudios = []
+        if (e.target.querySelector('[name="studio_kadewe"]')?.checked)  assignedStudios.push('KaDeWe')
+        if (e.target.querySelector('[name="studio_mitte"]')?.checked)   assignedStudios.push('Studio Mitte')
+        formObj.assigned_studios = assignedStudios
+        await addEmployee(formObj, selectedSkills)
         showToast('Mitarbeiter angelegt!', 'success')
         showAddForm = false
         await loadData(); rerender()

@@ -363,7 +363,7 @@ export function StudioAdmin({ user }) {
                 <th>E-Mail</th>
                 <th>Aktuelle Rolle</th>
                 <th>Studios</th>
-                <th style="text-align:center">Status / Aktion</th>
+                <th style="text-align:center">Status / Aktionen</th>
               </tr>
             </thead>
             <tbody>
@@ -389,12 +389,19 @@ export function StudioAdmin({ user }) {
                     </div>
                   </td>
                   <td style="text-align:center">
-                    <button
-                      class="staff-toggle-btn btn btn-sm"
-                      data-id="${p.id}"
-                      data-active="${p.is_active !== false}"
-                      style="font-size:0.78rem;padding:5px 12px;border-radius:var(--radius-sm);cursor:pointer;background:none;${p.is_active !== false ? 'border:1px solid #6B8F71;color:#3a6b3f' : 'border:1px solid var(--terracotta);color:var(--terracotta)'}"
-                    >${p.is_active !== false ? '[ Aktiv ]' : '[ Inaktiv ]'}</button>
+                    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+                      <button
+                        class="staff-toggle-btn btn btn-sm"
+                        data-id="${p.id}"
+                        data-active="${p.is_active !== false}"
+                        style="font-size:0.78rem;padding:5px 12px;border-radius:var(--radius-sm);cursor:pointer;background:none;${p.is_active !== false ? 'border:1px solid #6B8F71;color:#3a6b3f' : 'border:1px solid var(--terracotta);color:var(--terracotta)'}"
+                      >${p.is_active !== false ? '[ Aktiv ]' : '[ Inaktiv ]'}</button>
+                      <button
+                        class="staff-edit-btn btn btn-ghost btn-sm"
+                        data-id="${p.id}"
+                        style="font-size:0.78rem;padding:5px 12px"
+                      >[ Bearbeiten ]</button>
+                    </div>
                   </td>
                 </tr>
               `).join('')}
@@ -403,6 +410,79 @@ export function StudioAdmin({ user }) {
         </div>
       </div>
     `
+  }
+
+  function openEditProfileModal(profileId) {
+    const p = staffProfiles.find(x => x.id === profileId)
+    if (!p) return
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100dvh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="padding:18px 20px 0">
+          <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Profil bearbeiten</h3>
+          <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${p.full_name ?? p.email ?? '–'}</div>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
+            Vollständiger Name
+            <input id="ep-name" type="text" value="${(p.full_name ?? '').replace(/"/g, '&quot;')}" style="${inputStyle}">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem">
+            E-Mail
+            <input id="ep-email" type="email" value="${(p.email ?? '').replace(/"/g, '&quot;')}" style="${inputStyle}">
+          </label>
+          <div id="ep-msg" style="display:none;font-size:0.875rem;padding:10px 14px;border-radius:var(--radius-sm)"></div>
+        </div>
+        <div style="padding:0 20px 20px;display:flex;gap:8px">
+          <button id="ep-save" class="btn btn-primary">[ Änderungen speichern ]</button>
+          <button id="ep-cancel" class="btn btn-ghost">[ Abbrechen ]</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const msgEl   = overlay.querySelector('#ep-msg')
+    const saveBtn = overlay.querySelector('#ep-save')
+
+    function showMsg(text, isError) {
+      msgEl.textContent      = text
+      msgEl.style.display    = 'block'
+      msgEl.style.background = isError ? '#fdecea' : '#e8f2e9'
+      msgEl.style.color      = isError ? '#8b2e1a' : '#3a6b3f'
+      msgEl.style.border     = `1px solid ${isError ? 'var(--terracotta)' : '#6B8F71'}`
+    }
+
+    overlay.querySelector('#ep-cancel').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    saveBtn.addEventListener('click', async () => {
+      const name  = overlay.querySelector('#ep-name').value.trim()
+      const email = overlay.querySelector('#ep-email').value.trim()
+      msgEl.style.display = 'none'
+
+      if (!name)  { showMsg('Name darf nicht leer sein.', true);   return }
+      if (!email) { showMsg('E-Mail darf nicht leer sein.', true); return }
+
+      saveBtn.disabled    = true
+      saveBtn.textContent = '[ Speichern... ]'
+
+      const { error } = await supabase.from('profiles').update({ full_name: name, email }).eq('id', profileId)
+
+      saveBtn.disabled    = false
+      saveBtn.textContent = '[ Änderungen speichern ]'
+
+      if (error) { showMsg('Fehler: ' + error.message, true); return }
+
+      const idx = staffProfiles.findIndex(x => x.id === profileId)
+      if (idx >= 0) { staffProfiles[idx].full_name = name; staffProfiles[idx].email = email }
+      showToast('Profil aktualisiert.')
+      overlay.remove()
+      rerender()
+    })
   }
 
   function buildStaffSection() {
@@ -874,6 +954,11 @@ export function StudioAdmin({ user }) {
     // Staff: toggle active/inactive
     container.querySelectorAll('.staff-toggle-btn[data-id]').forEach(btn => {
       btn.addEventListener('click', () => toggleActive(btn.dataset.id, btn.dataset.active === 'true'))
+    })
+
+    // Staff: edit profile (name + email)
+    container.querySelectorAll('.staff-edit-btn[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => openEditProfileModal(btn.dataset.id))
     })
 
     // Staff: sub-tab navigation
