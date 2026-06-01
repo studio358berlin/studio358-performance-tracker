@@ -326,7 +326,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
     // Erlaubte Studios aus Mitarbeiterprofil – kein Fallback, leeres Array = kein Zugriff
     const empStudios  = user?.profile?.assigned_studios ?? []
-    const allowedLocs = locations.filter(l => empStudios.includes(l.name))
+    const allowedLocs = locations.filter(l => empStudios.some(s => s.toLowerCase() === l.name.toLowerCase()))
     const singleLoc   = allowedLocs.length === 1 ? allowedLocs[0] : null
 
     const isEdit     = !!hoursToday
@@ -672,7 +672,7 @@ export function DailyCheckout({ user, onNavigate }) {
     const filteredByLoc   = locNameLower
       ? employees.filter(e => (e.assigned_studios ?? []).some(s => s.toLowerCase() === locNameLower))
       : employees
-    const modalEmployees  = filteredByLoc.length ? filteredByLoc : employees
+    const modalEmployees  = filteredByLoc
 
     overlay.innerHTML = `
       <div style="background:var(--white);border-radius:var(--radius-lg);max-width:420px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">

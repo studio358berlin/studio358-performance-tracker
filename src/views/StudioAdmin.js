@@ -381,7 +381,7 @@ export function StudioAdmin({ user }) {
                       ${STUDIOS.map(studio => `
                         <label style="display:flex;align-items:center;gap:5px;font-size:0.83rem;cursor:pointer;white-space:nowrap;user-select:none">
                           <input type="checkbox" class="studio-check" data-profile="${p.id}" data-studio="${studio}"
-                            ${(p.assigned_studios ?? []).includes(studio) ? 'checked' : ''}
+                            ${(p.assigned_studios ?? []).some(s => s.toLowerCase() === studio.toLowerCase()) ? 'checked' : ''}
                             style="width:14px;height:14px;accent-color:var(--aubergine)">
                           ${studio}
                         </label>
@@ -865,8 +865,8 @@ export function StudioAdmin({ user }) {
         const studio  = cb.dataset.studio
         const current = profile.assigned_studios ?? []
         const updated = cb.checked
-          ? [...new Set([...current, studio])]
-          : current.filter(s => s !== studio)
+          ? [...current.filter(s => s.toLowerCase() !== studio.toLowerCase()), studio]
+          : current.filter(s => s.toLowerCase() !== studio.toLowerCase())
         updateAssignedStudios(profileId, updated)
       })
     })
