@@ -785,10 +785,9 @@ export function DailyCheckout({ user, onNavigate }) {
         ;(async () => {
           const { data } = await supabase.from('profiles').select('*').eq('is_active', true)
           const all      = (data ?? []).filter(p => p.full_name)
-          const filtered = locNameLower
+          const toShow   = locNameLower
             ? all.filter(p => (p.assigned_studios ?? []).map(s => s.toLowerCase()).includes(locNameLower))
             : all
-          const toShow   = filtered.length ? filtered : all
           empSelect.innerHTML =
             '<option value="">– Mitarbeiter wählen –</option>' +
             toShow.map(e =>

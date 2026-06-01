@@ -1,8 +1,20 @@
 export function Sidebar({ user, currentView, onNavigate, onLogout }) {
-  const isManager = user?.profile?.is_manager || user?.profile?.role === 'manager'
+  const role      = user?.profile?.role ?? ''
+  const isAdmin   = role === 'admin'
+  const isManager = user?.profile?.is_manager || role === 'manager' || isAdmin
   const initials  = getInitials(user?.profile?.full_name || user?.email || '?')
   const level     = user?.profile?.level || 'employee'
   const location  = user?.profile?.location
+
+  // Admin: kein "Mein Profil" – das ist als Sub-Tab im Studio Admin integriert
+  const adminNav = [
+    { id: 'checkout',  label: 'Tagesabschluss'    },
+    { id: 'analytics', label: 'Umsatz Cockpit'     },
+    { id: 'dashboard', label: 'Performance Tracker' },
+    { id: 'team',      label: 'Team Management'    },
+    { id: 'sops',      label: 'Studio Guide'       },
+    { id: 'admin',     label: 'Studio Admin'        },
+  ]
 
   const managerNav = [
     { id: 'checkout',  label: 'Tagesabschluss'    },
@@ -21,7 +33,7 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
     { id: 'profile',        label: 'Mein Profil'        },
   ]
 
-  const navItems = isManager ? managerNav : employeeNav
+  const navItems = isAdmin ? adminNav : isManager ? managerNav : employeeNav
 
   function render() {
     const el = document.createElement('aside')
@@ -49,9 +61,11 @@ export function Sidebar({ user, currentView, onNavigate, onLogout }) {
           <div class="sidebar-user-info">
             <div class="sidebar-user-name">${user?.profile?.full_name || user?.email}</div>
             <div class="sidebar-user-role">
-              ${isManager
-                ? 'Manager'
-                : `${level.charAt(0).toUpperCase() + level.slice(1)}${location ? ' · ' + locationLabel(location) : ''}`
+              ${isAdmin
+                ? 'Admin'
+                : isManager
+                  ? 'Manager'
+                  : `${level.charAt(0).toUpperCase() + level.slice(1)}${location ? ' · ' + locationLabel(location) : ''}`
               }
             </div>
           </div>
