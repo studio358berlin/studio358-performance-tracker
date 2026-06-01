@@ -183,9 +183,13 @@ export function DailyCheckout({ user, onNavigate }) {
     )
     const employeeId = data.employee_id ?? user.id
 
+    const effectiveLocationId = (!isManager && hoursToday?.location_id)
+      ? hoursToday.location_id
+      : selectedLocationId
+
     const payload = {
       employee_id:      employeeId,
-      location_id:      selectedLocationId,
+      location_id:      effectiveLocationId,
       treatment_id:     data.treatment_id,
       revenue,
       upsell_amount:    upsell,
