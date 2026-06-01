@@ -12,6 +12,7 @@ export function DailyCheckout({ user, onNavigate }) {
   const forcedLocSlug = mgrStudios?.length === 1 ? (STUDIO_SLUG[mgrStudios[0]] ?? null) : null
 
   function isEmpVisible(emp) {
+    if (!(emp.assigned_studios ?? []).length) return false  // kein Studio = nirgendwo eingeteilt
     if (!mgrStudios)        return true
     if (!mgrStudios.length) return true
     return mgrStudios.some(s =>
@@ -323,11 +324,9 @@ export function DailyCheckout({ user, onNavigate }) {
     const overlay = document.createElement('div')
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
 
-    // Erlaubte Studios aus Mitarbeiterprofil
+    // Erlaubte Studios aus Mitarbeiterprofil – kein Fallback, leeres Array = kein Zugriff
     const empStudios  = user?.profile?.assigned_studios ?? []
-    const allowedLocs = empStudios.length > 0
-      ? locations.filter(l => empStudios.includes(l.name))
-      : locations
+    const allowedLocs = locations.filter(l => empStudios.includes(l.name))
     const singleLoc   = allowedLocs.length === 1 ? allowedLocs[0] : null
 
     const isEdit     = !!hoursToday
@@ -366,7 +365,11 @@ export function DailyCheckout({ user, onNavigate }) {
         <div style="padding:16px 20px;display:flex;flex-direction:column;gap:18px">
 
           <!-- A) Standort -->
-          ${singleLoc ? `
+          ${empStudios.length === 0 ? `
+            <div style="background:#fdecea;border-radius:var(--radius-sm);padding:10px 14px;font-size:0.85rem;color:#8b2e1a;border:1px solid var(--terracotta)">
+              Kein Studio zugewiesen
+            </div>
+          ` : singleLoc ? `
             <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;font-size:0.85rem;color:var(--text-mid)">
               Standort: <strong style="color:var(--aubergine)">${singleLoc.name}</strong>
             </div>
@@ -424,7 +427,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
         <div style="padding:0 20px 20px">
           <button id="hf-save" class="btn btn-accent"
-            style="width:100%;justify-content:center;${!singleLoc && !curLocId && !curLocName ? 'opacity:0.45;pointer-events:none' : ''}">
+            style="width:100%;justify-content:center;${empStudios.length === 0 || (!singleLoc && !curLocId && !curLocName) ? 'opacity:0.45;pointer-events:none' : ''}">
             Arbeitszeit verbindlich speichern
           </button>
         </div>
@@ -784,7 +787,7 @@ export function DailyCheckout({ user, onNavigate }) {
       if (empSelect) {
         ;(async () => {
           const { data } = await supabase.from('profiles').select('*').eq('is_active', true)
-          const all      = (data ?? []).filter(p => p.full_name)
+          const all      = (data ?? []).filter(p => p.full_name && (p.assigned_studios ?? []).length > 0)
           const toShow   = locNameLower
             ? all.filter(p => (p.assigned_studios ?? []).map(s => s.toLowerCase()).includes(locNameLower))
             : all
