@@ -82,6 +82,8 @@ export function DailyCheckout({ user, onNavigate }) {
         .from('employee_daily_hours').select('*')
         .eq('employee_id', user.id).eq('date', todayDate).maybeSingle()
       hoursToday = hData ?? null
+      // Behandlungsfilter sofort auf heutigen Arbeitsort synchronisieren
+      if (hoursToday?.location_id) selectedLocationId = hoursToday.location_id
     }
   }
 
@@ -313,6 +315,8 @@ export function DailyCheckout({ user, onNavigate }) {
 
     if (error) { showToast('Fehler: ' + error.message, 'error'); return false }
     hoursToday = data
+    // Behandlungsfilter live auf neuen Arbeitsort umschalten
+    if (locationId) selectedLocationId = locationId
     showToast('Arbeitszeit gespeichert.')
     rerender()
     return true
