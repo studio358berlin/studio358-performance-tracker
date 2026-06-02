@@ -1078,6 +1078,98 @@ export function TeamManagement({ user }) {
     })
   }
 
+  function openHistoricalCorrectionModal(empId) {
+    const emp        = employees.find(e => e.id === empId)
+    const HOUR_OPTS  = Array.from({ length: 13 }, (_, i) => i)
+    const MIN_OPTS   = [0, 15, 30, 45]
+    const selectStyle = 'padding:10px 8px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;font-weight:700;color:var(--aubergine);background:var(--white);text-align:center;-webkit-appearance:auto;cursor:pointer;width:100%'
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0">
+          <div>
+            <h3 style="margin:0;font-size:1.05rem;color:var(--aubergine)">Zeiten korrigieren</h3>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:2px">${emp?.full_name ?? '–'}</div>
+          </div>
+          <button id="hc-close" style="background:none;border:none;font-size:0.85rem;cursor:pointer;color:var(--text-light);padding:4px 8px;font-weight:700">X</button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;color:var(--text-mid)">
+            Datum der Schicht
+            <input id="hc-date" type="date" max="${localDate()}"
+              style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;color:var(--aubergine);background:var(--white)">
+          </label>
+          <div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text-mid);margin-bottom:8px">Neue Netto-Arbeitszeit</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:0.75rem;color:var(--text-light);text-align:center">Stunden</span>
+                <select id="hc-hours" style="${selectStyle}">
+                  ${HOUR_OPTS.map(h => `<option value="${h}">${h} Std.</option>`).join('')}
+                </select>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:0.75rem;color:var(--text-light);text-align:center">Minuten</span>
+                <select id="hc-mins" style="${selectStyle}">
+                  ${MIN_OPTS.map(m => `<option value="${m}">${String(m).padStart(2,'0')} Min.</option>`).join('')}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:0 20px 20px;display:flex;gap:8px">
+          <button id="hc-cancel" class="btn btn-ghost" style="flex:1;justify-content:center">[ Abbrechen ]</button>
+          <button id="hc-save" class="btn btn-accent" style="flex:1;justify-content:center">[ Speichern ]</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    overlay.querySelector('#hc-close').addEventListener('click', () => overlay.remove())
+    overlay.querySelector('#hc-cancel').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    overlay.querySelector('#hc-save').addEventListener('click', async () => {
+      const dateVal = overlay.querySelector('#hc-date').value
+      if (!dateVal) { showToast('Bitte ein Datum auswaehlen.', 'error'); return }
+      const h    = parseInt(overlay.querySelector('#hc-hours').value, 10)
+      const m    = parseInt(overlay.querySelector('#hc-mins').value,  10)
+      const netH = h + m / 60
+      if (netH <= 0) { showToast('Bitte eine Arbeitszeit von mindestens 15 Minuten angeben.', 'error'); return }
+
+      const saveBtn = overlay.querySelector('#hc-save')
+      saveBtn.disabled    = true
+      saveBtn.textContent = 'Wird gespeichert...'
+
+      const { error } = await supabase
+        .from('employee_daily_hours')
+        .upsert({
+          employee_id:   empId,
+          date:          dateVal,
+          hours_worked:  netH,
+          break_minutes: 0,
+          location_id:   emp?.location_id ?? null,
+          is_modified:   true,
+        }, { onConflict: 'employee_id,date' })
+
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error')
+        saveBtn.disabled    = false
+        saveBtn.textContent = '[ Speichern ]'
+        return
+      }
+
+      showToast(`Arbeitszeit fuer ${emp?.full_name ?? '–'} gespeichert.`)
+      overlay.remove()
+      await loadData()
+      rerender()
+    })
+  }
+
   function openTargetHoursModal(empId) {
     const now  = new Date()
     const year  = now.getFullYear()
@@ -1188,6 +1280,7 @@ export function TeamManagement({ user }) {
                 <th>Diesen Monat</th>
                 <th>Soll</th>
                 <th>Konto (+/−)</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -1227,6 +1320,11 @@ export function TeamManagement({ user }) {
                   <td style="font-weight:600;color:var(--aubergine)">${fmtHours(monthMins)}</td>
                   <td style="color:var(--text-mid)">${targetH} Std.</td>
                   <td style="font-weight:700;color:${balColor}">${monthMins > 0 || balance < 0 ? balStr : '–'}</td>
+                  <td>
+                    <button class="btn-correct-hours btn btn-ghost btn-sm" data-emp="${emp.id}"
+                      style="white-space:nowrap;font-size:0.72rem;padding:3px 8px"
+                      title="Historische Schicht manuell eintragen oder korrigieren">[ Zeiten korrigieren ]</button>
+                  </td>
                 </tr>
               `}).join('')}
             </tbody>
@@ -1756,6 +1854,13 @@ export function TeamManagement({ user }) {
       btn.addEventListener('click', e => {
         e.stopPropagation()
         openSkillEditModal(btn.dataset.emp)
+      })
+    })
+
+    container.querySelectorAll('.btn-correct-hours[data-emp]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        openHistoricalCorrectionModal(btn.dataset.emp)
       })
     })
 
