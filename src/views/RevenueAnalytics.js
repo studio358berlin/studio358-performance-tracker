@@ -47,7 +47,7 @@ export function RevenueAnalytics({ user }) {
     const [locRes, profRes, treatRes] = await Promise.all([
       supabase.from('locations').select('*').order('name'),
       supabase.from('profiles').select('id, full_name, location_id, assigned_studios').eq('is_manager', false),
-      supabase.from('treatments').select('id, name, duration').order('name'),
+      supabase.from('treatments').select('id, name, duration, price, location_id').order('name'),
     ])
     locations  = locRes.data  ?? []
     profiles   = profRes.data ?? []
@@ -600,6 +600,7 @@ export function RevenueAnalytics({ user }) {
           <p style="color:var(--text-light);font-size:0.875rem">${periodSubtitle()}</p>
         </div>
         <button class="btn btn-sm btn-accent" id="export-csv-btn">↓ Umsatz Export (.CSV)</button>
+        <button class="btn btn-sm" id="backfill-btn" style="background:var(--white);color:var(--aubergine);border:2px solid var(--aubergine)">[ Behandlung nachtragen ]</button>
       </div>
 
       <!-- Filter bar: Row 1 = Tabs + Von/Bis, Row 2 = Standort + Mitarbeiter -->
@@ -694,9 +695,144 @@ export function RevenueAnalytics({ user }) {
     `
   }
 
+  // ── Nachbuchungs-Modal ────────────────────────────────────────────────────
+
+  function openBackfillModal() {
+    const today  = localDate()
+    const mStyle = 'padding:9px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;width:100%;box-sizing:border-box;background:var(--white);color:var(--aubergine)'
+
+    function treatOpts(locId) {
+      const list = treatments.filter(t => t.active !== false && (!locId || !t.location_id || t.location_id === locId))
+      if (!list.length) return '<option value="">Keine Behandlungen verfügbar</option>'
+      return '<option value="">Behandlung wählen ...</option>' +
+        list.map(t => `<option value="${t.id}" data-price="${t.price ?? 0}">${t.name}</option>`).join('')
+    }
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100dvh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:480px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="padding:20px 24px 0">
+          <h3 style="margin:0;font-size:1.1rem;color:var(--aubergine)">Behandlung nachtragen</h3>
+          <div style="font-size:0.8rem;color:var(--text-light);margin-top:4px">Vergessene Buchung für ein vergangenes Datum einbuchen</div>
+        </div>
+        <div style="padding:20px 24px;display:flex;flex-direction:column;gap:14px">
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+            Datum der Behandlung
+            <input id="bf-date" type="date" value="${today}" style="${mStyle}">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+            Mitarbeiter auswählen
+            <select id="bf-employee" style="${mStyle}">
+              <option value="">Mitarbeiter wählen ...</option>
+              ${profiles.map(p => `<option value="${p.id}">${p.full_name}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+            Standort
+            <select id="bf-location" style="${mStyle}">
+              <option value="">Standort wählen ...</option>
+              ${locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+            Behandlung
+            <select id="bf-treatment" style="${mStyle}">
+              <option value="">Zuerst Standort wählen ...</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+            Preis in EUR
+            <input id="bf-price" type="number" min="0" step="0.01" value="" placeholder="0.00" style="${mStyle}">
+          </label>
+          <div id="bf-msg" style="display:none;font-size:0.875rem;padding:10px 14px;border-radius:var(--radius-sm)"></div>
+        </div>
+        <div style="padding:0 24px 24px;display:flex;gap:10px">
+          <button id="bf-save" class="btn btn-accent" style="font-size:0.9rem">[ Buchen ]</button>
+          <button id="bf-cancel" class="btn btn-ghost" style="font-size:0.9rem">[ Abbrechen ]</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const msgEl     = overlay.querySelector('#bf-msg')
+    const saveBtn   = overlay.querySelector('#bf-save')
+    const locSel    = overlay.querySelector('#bf-location')
+    const treatSel  = overlay.querySelector('#bf-treatment')
+    const priceInp  = overlay.querySelector('#bf-price')
+
+    function showMsg(text, isError = true) {
+      msgEl.textContent      = text
+      msgEl.style.display    = 'block'
+      msgEl.style.background = isError ? '#fdecea' : '#e8f2e9'
+      msgEl.style.color      = isError ? '#8b2e1a' : '#3a6b3f'
+      msgEl.style.border     = `1px solid ${isError ? 'var(--terracotta)' : '#6B8F71'}`
+    }
+
+    locSel.addEventListener('change', () => {
+      treatSel.innerHTML = treatOpts(locSel.value)
+      priceInp.value     = ''
+    })
+
+    treatSel.addEventListener('change', () => {
+      const opt = treatSel.options[treatSel.selectedIndex]
+      const p   = opt?.dataset?.price
+      priceInp.value = (p != null && p !== '') ? Number(p).toFixed(2) : ''
+    })
+
+    overlay.querySelector('#bf-cancel').addEventListener('click', () => overlay.remove())
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+
+    saveBtn.addEventListener('click', async () => {
+      const dateVal    = overlay.querySelector('#bf-date').value
+      const employeeId = overlay.querySelector('#bf-employee').value
+      const locId      = locSel.value
+      const treatId    = treatSel.value
+      const price      = priceInp.value
+
+      msgEl.style.display = 'none'
+      if (!dateVal)                              { showMsg('Bitte ein Datum wählen.');              return }
+      if (!employeeId)                           { showMsg('Bitte einen Mitarbeiter wählen.');      return }
+      if (!locId)                                { showMsg('Bitte einen Standort wählen.');         return }
+      if (!treatId)                              { showMsg('Bitte eine Behandlung wählen.');        return }
+      if (price === '' || isNaN(Number(price)))  { showMsg('Bitte einen gültigen Preis eingeben.'); return }
+
+      saveBtn.disabled    = true
+      saveBtn.textContent = '[ Wird gespeichert... ]'
+
+      const { error } = await supabase.from('daily_revenue_logs').insert({
+        created_at:     new Date(dateVal + 'T12:00:00').toISOString(),
+        employee_id:    employeeId,
+        location_id:    locId,
+        treatment_id:   treatId,
+        revenue:        Number(price),
+        is_cancelled:   false,
+        is_no_show:     false,
+        payment_method: 'bar',
+        tip:            0,
+      })
+
+      if (error) {
+        showMsg('Fehler beim Speichern: ' + error.message)
+        saveBtn.disabled    = false
+        saveBtn.textContent = '[ Buchen ]'
+        return
+      }
+
+      overlay.remove()
+      showToast('Behandlung erfolgreich nachgebucht!')
+      await Promise.all([loadLogs(), loadTarget(), loadHours(), loadTopServices()])
+      rerender()
+    })
+  }
+
   function attachEvents() {
     const exportBtn = container.querySelector('#export-csv-btn')
     if (exportBtn) exportBtn.addEventListener('click', () => downloadControllingCsv(exportBtn))
+
+    container.querySelector('#backfill-btn')?.addEventListener('click', openBackfillModal)
 
     container.querySelectorAll('.location-tab[data-period]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -790,4 +926,14 @@ function color(hex, alpha) {
   const g = parseInt(hex.slice(3,5),16)
   const b = parseInt(hex.slice(5,7),16)
   return `rgba(${r},${g},${b},${alpha})`
+}
+
+function showToast(message, type = 'success') {
+  let c = document.querySelector('.toast-container')
+  if (!c) { c = document.createElement('div'); c.className = 'toast-container'; document.body.appendChild(c) }
+  const t = document.createElement('div')
+  t.className = `toast ${type}`
+  t.textContent = message
+  c.appendChild(t)
+  setTimeout(() => t.remove(), 3500)
 }
