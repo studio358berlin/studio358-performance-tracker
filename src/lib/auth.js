@@ -22,13 +22,17 @@ export async function login(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw error
 
-  supabase.from('login_history').insert({
+  const { error: logError } = await supabase.from('login_history').insert({
     user_id:      data.user?.id,
     email,
     logged_in_at: new Date().toISOString(),
-    user_agent:   navigator.userAgent,
     device_info:  parseUserAgent(navigator.userAgent),
-  }).then(() => {}).catch(() => {})
+  })
+  if (logError) {
+    console.error('Kritischer Fehler beim Schreiben des Login-Protokolls:', logError)
+  } else {
+    console.log('Login-Protokoll erfolgreich in Supabase gespeichert!')
+  }
 
   return data
 }
