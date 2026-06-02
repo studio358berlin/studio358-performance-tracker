@@ -701,11 +701,14 @@ export function RevenueAnalytics({ user }) {
     const today  = localDate()
     const mStyle = 'padding:9px 12px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;width:100%;box-sizing:border-box;background:var(--white);color:var(--aubergine)'
 
+    const CUSTOM_VAL = '__custom__'
+
     function treatOpts(locId) {
-      const list = treatments.filter(t => t.active !== false && (!locId || !t.location_id || t.location_id === locId))
-      if (!list.length) return '<option value="">Keine Behandlungen verfügbar</option>'
-      return '<option value="">Behandlung wählen ...</option>' +
-        list.map(t => `<option value="${t.id}" data-price="${t.price ?? 0}">${t.name}</option>`).join('')
+      const list     = treatments.filter(t => t.active !== false && (!locId || !t.location_id || t.location_id === locId))
+      const baseOpts = list.map(t => `<option value="${t.id}" data-price="${t.price ?? 0}">${t.name}</option>`).join('')
+      return `<option value="">Behandlung wählen ...</option>` +
+        `<option value="${CUSTOM_VAL}">[ Eigene Behandlung (Freitext) ]</option>` +
+        baseOpts
     }
 
     const overlay = document.createElement('div')
@@ -742,6 +745,12 @@ export function RevenueAnalytics({ user }) {
               <option value="">Zuerst Standort wählen ...</option>
             </select>
           </label>
+          <div id="bf-custom-wrap" style="display:none">
+            <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+              Behandlungs-Name (Freitext) *
+              <input id="bf-custom-name" type="text" maxlength="100" placeholder="z.B. Gel-Nails komplett" style="${mStyle}">
+            </label>
+          </div>
           <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
             Preis in EUR
             <input id="bf-price" type="number" min="0" step="0.01" value="" placeholder="0.00" style="${mStyle}">
@@ -771,33 +780,47 @@ export function RevenueAnalytics({ user }) {
       msgEl.style.border     = `1px solid ${isError ? 'var(--terracotta)' : '#6B8F71'}`
     }
 
+    const customWrap = overlay.querySelector('#bf-custom-wrap')
+    const customName = overlay.querySelector('#bf-custom-name')
+
     locSel.addEventListener('change', () => {
-      treatSel.innerHTML = treatOpts(locSel.value)
-      priceInp.value     = ''
+      treatSel.innerHTML       = treatOpts(locSel.value)
+      priceInp.value           = ''
+      customWrap.style.display = 'none'
+      customName.value         = ''
     })
 
     treatSel.addEventListener('change', () => {
-      const opt = treatSel.options[treatSel.selectedIndex]
-      const p   = opt?.dataset?.price
-      priceInp.value = (p != null && p !== '') ? Number(p).toFixed(2) : ''
+      const isCustom = treatSel.value === CUSTOM_VAL
+      customWrap.style.display = isCustom ? 'block' : 'none'
+      if (isCustom) {
+        priceInp.value = ''
+      } else {
+        const opt = treatSel.options[treatSel.selectedIndex]
+        const p   = opt?.dataset?.price
+        priceInp.value = (p != null && p !== '') ? Number(p).toFixed(2) : ''
+      }
     })
 
     overlay.querySelector('#bf-cancel').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 
     saveBtn.addEventListener('click', async () => {
-      const dateVal    = overlay.querySelector('#bf-date').value
-      const employeeId = overlay.querySelector('#bf-employee').value
-      const locId      = locSel.value
-      const treatId    = treatSel.value
-      const price      = priceInp.value
+      const dateVal      = overlay.querySelector('#bf-date').value
+      const employeeId   = overlay.querySelector('#bf-employee').value
+      const locId        = locSel.value
+      const treatId      = treatSel.value
+      const price        = priceInp.value
+      const isCustom     = treatId === CUSTOM_VAL
+      const freitextName = customName.value.trim()
 
       msgEl.style.display = 'none'
-      if (!dateVal)                              { showMsg('Bitte ein Datum wählen.');              return }
-      if (!employeeId)                           { showMsg('Bitte einen Mitarbeiter wählen.');      return }
-      if (!locId)                                { showMsg('Bitte einen Standort wählen.');         return }
-      if (!treatId)                              { showMsg('Bitte eine Behandlung wählen.');        return }
-      if (price === '' || isNaN(Number(price)))  { showMsg('Bitte einen gültigen Preis eingeben.'); return }
+      if (!dateVal)                              { showMsg('Bitte ein Datum wählen.');                   return }
+      if (!employeeId)                           { showMsg('Bitte einen Mitarbeiter wählen.');           return }
+      if (!locId)                                { showMsg('Bitte einen Standort wählen.');              return }
+      if (!treatId)                              { showMsg('Bitte eine Behandlung wählen.');             return }
+      if (isCustom && !freitextName)             { showMsg('Bitte einen Behandlungs-Namen eingeben.');   return }
+      if (price === '' || isNaN(Number(price)))  { showMsg('Bitte einen gültigen Preis eingeben.');      return }
 
       saveBtn.disabled    = true
       saveBtn.textContent = '[ Wird gespeichert... ]'
@@ -806,7 +829,7 @@ export function RevenueAnalytics({ user }) {
         created_at:     new Date(dateVal + 'T12:00:00').toISOString(),
         employee_id:    employeeId,
         location_id:    locId,
-        treatment_id:   treatId,
+        treatment_id:   isCustom ? null : treatId,
         revenue:        Number(price),
         is_cancelled:   false,
         is_no_show:     false,
