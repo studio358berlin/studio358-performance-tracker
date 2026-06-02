@@ -1103,7 +1103,8 @@ export function TeamManagement({ user }) {
               style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:1rem;color:var(--aubergine);background:var(--white)">
           </label>
           <div>
-            <div style="font-size:0.85rem;font-weight:600;color:var(--text-mid);margin-bottom:8px">Neue Netto-Arbeitszeit</div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text-mid);margin-bottom:8px">Netto-Arbeitszeit</div>
+            <div id="hc-hint" style="font-size:0.75rem;color:var(--text-light);margin-bottom:6px">Datum waehlen, um vorhandenen Eintrag zu laden.</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div style="display:flex;flex-direction:column;gap:4px">
                 <span style="font-size:0.75rem;color:var(--text-light);text-align:center">Stunden</span>
@@ -1118,6 +1119,7 @@ export function TeamManagement({ user }) {
                 </select>
               </div>
             </div>
+            <div style="font-size:0.72rem;color:var(--text-light);margin-top:6px">0 Std. 00 Min. speichern loescht den Eintrag fuer diesen Tag.</div>
           </div>
         </div>
         <div style="padding:0 20px 20px;display:flex;gap:8px">
@@ -1129,32 +1131,79 @@ export function TeamManagement({ user }) {
 
     document.body.appendChild(overlay)
 
+    const dateInput   = overlay.querySelector('#hc-date')
+    const hoursSelect = overlay.querySelector('#hc-hours')
+    const minsSelect  = overlay.querySelector('#hc-mins')
+    const hintEl      = overlay.querySelector('#hc-hint')
+
+    async function prefillFromDate(dateVal) {
+      if (!dateVal) return
+      hintEl.textContent = 'Wird geladen...'
+      const { data } = await supabase
+        .from('employee_daily_hours')
+        .select('hours_worked, break_minutes')
+        .eq('employee_id', empId)
+        .eq('date', dateVal)
+        .maybeSingle()
+
+      if (data) {
+        const netH         = Math.max(0, (data.hours_worked ?? 0) - (data.break_minutes ?? 0) / 60)
+        const totalMins    = Math.round(netH * 60)
+        const roundedTo15  = Math.round(totalMins / 15) * 15
+        const dispH        = Math.min(12, Math.floor(roundedTo15 / 60))
+        const dispM        = roundedTo15 % 60
+        hoursSelect.value  = String(dispH)
+        minsSelect.value   = String(MIN_OPTS.includes(dispM) ? dispM : 0)
+        hintEl.textContent = 'Vorhandener Eintrag geladen.'
+      } else {
+        hoursSelect.value  = '0'
+        minsSelect.value   = '0'
+        hintEl.textContent = 'Kein Eintrag fuer dieses Datum vorhanden.'
+      }
+    }
+
     overlay.querySelector('#hc-close').addEventListener('click', () => overlay.remove())
     overlay.querySelector('#hc-cancel').addEventListener('click', () => overlay.remove())
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+    dateInput.addEventListener('change', () => prefillFromDate(dateInput.value))
 
     overlay.querySelector('#hc-save').addEventListener('click', async () => {
-      const dateVal = overlay.querySelector('#hc-date').value
+      const dateVal = dateInput.value
       if (!dateVal) { showToast('Bitte ein Datum auswaehlen.', 'error'); return }
-      const h    = parseInt(overlay.querySelector('#hc-hours').value, 10)
-      const m    = parseInt(overlay.querySelector('#hc-mins').value,  10)
+
+      const h    = parseInt(hoursSelect.value, 10)
+      const m    = parseInt(minsSelect.value,  10)
       const netH = h + m / 60
-      if (netH <= 0) { showToast('Bitte eine Arbeitszeit von mindestens 15 Minuten angeben.', 'error'); return }
 
       const saveBtn = overlay.querySelector('#hc-save')
       saveBtn.disabled    = true
       saveBtn.textContent = 'Wird gespeichert...'
 
-      const { error } = await supabase
-        .from('employee_daily_hours')
-        .upsert({
-          employee_id:   empId,
-          date:          dateVal,
-          hours_worked:  netH,
-          break_minutes: 0,
-          location_id:   emp?.location_id ?? null,
-          is_modified:   true,
-        }, { onConflict: 'employee_id,date' })
+      const fmtDate = new Date(dateVal + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'long' })
+      let error
+
+      if (netH === 0) {
+        const res = await supabase
+          .from('employee_daily_hours')
+          .delete()
+          .eq('employee_id', empId)
+          .eq('date', dateVal)
+        error = res.error
+        if (!error) showToast(`Eintrag fuer ${emp?.full_name ?? '–'} am ${fmtDate} geloescht.`)
+      } else {
+        const res = await supabase
+          .from('employee_daily_hours')
+          .upsert({
+            employee_id:   empId,
+            date:          dateVal,
+            hours_worked:  netH,
+            break_minutes: 0,
+            location_id:   emp?.location_id ?? null,
+            is_modified:   true,
+          }, { onConflict: 'employee_id,date' })
+        error = res.error
+        if (!error) showToast(`Arbeitszeit fuer ${emp?.full_name ?? '–'} am ${fmtDate} gespeichert.`)
+      }
 
       if (error) {
         showToast('Fehler: ' + error.message, 'error')
@@ -1163,7 +1212,6 @@ export function TeamManagement({ user }) {
         return
       }
 
-      showToast(`Arbeitszeit fuer ${emp?.full_name ?? '–'} gespeichert.`)
       overlay.remove()
       await loadData()
       rerender()
