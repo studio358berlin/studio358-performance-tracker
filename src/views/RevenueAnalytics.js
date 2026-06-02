@@ -705,7 +705,7 @@ export function RevenueAnalytics({ user }) {
 
     function treatOpts(locId) {
       const list     = treatments.filter(t => t.active !== false && (!locId || !t.location_id || t.location_id === locId))
-      const baseOpts = list.map(t => `<option value="${t.id}" data-price="${t.price ?? 0}">${t.name}</option>`).join('')
+      const baseOpts = list.map(t => `<option value="${t.id}" data-price="${t.price ?? 0}">${t.name} (${fmt(t.price)})</option>`).join('')
       return `<option value="">Behandlung wählen ...</option>` +
         `<option value="${CUSTOM_VAL}">[ Eigene Behandlung (Freitext) ]</option>` +
         baseOpts
