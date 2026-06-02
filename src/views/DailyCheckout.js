@@ -82,8 +82,13 @@ export function DailyCheckout({ user, onNavigate }) {
         .from('employee_daily_hours').select('*')
         .eq('employee_id', user.id).eq('date', todayDate).maybeSingle()
       hoursToday = hData ?? null
-      // Behandlungsfilter sofort auf heutigen Arbeitsort synchronisieren
-      if (hoursToday?.location_id) selectedLocationId = hoursToday.location_id
+      // Standort STRIKT aus heutigem Einchecken ableiten – nie aus stale localStorage
+      if (hoursToday?.location_id) {
+        selectedLocationId = hoursToday.location_id
+      } else {
+        const slug = user?.profile?.location
+        selectedLocationId = locations.find(l => l.slug === slug)?.id ?? locations[0]?.id ?? null
+      }
     }
   }
 
@@ -1052,7 +1057,7 @@ export function DailyCheckout({ user, onNavigate }) {
       if (!log.is_no_show) {
         e.revenue += Number(log.revenue)
         e.minutes += Number(log.treatment?.duration ?? treatments.find(t => t.id === log.treatment_id)?.duration ?? 60)
-        const n = log.treatment?.name ?? '?'
+        const n = log.treatment?.name ?? treatments.find(t => t.id === log.treatment_id)?.name ?? 'Unbekannt'
         e.counts[n] = (e.counts[n] ?? 0) + 1
       }
     }
