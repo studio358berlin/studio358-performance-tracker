@@ -82,9 +82,9 @@ export function StudioAdmin({ user }) {
     const { data, error } = await supabase
       .from('login_history')
       .select('*')
-      .order('logged_in_at', { ascending: false })
+      .order('logged_at', { ascending: false })
       .limit(200)
-    if (error) { showToast('Login-Protokolle konnten nicht geladen werden.', 'error'); loginHistory = []; return }
+    if (error) { console.error('EXAKTER SUPABASE PROTOKOLL-FEHLER:', error); showToast('Login-Protokolle konnten nicht geladen werden.', 'error'); loginHistory = []; return }
     loginHistory = data ?? []
   }
 
@@ -619,7 +619,7 @@ export function StudioAdmin({ user }) {
               ${loginHistory.map(entry => `
                 <tr>
                   <td style="white-space:nowrap;color:var(--text-mid);font-size:0.82rem">
-                    ${new Date(entry.logged_in_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                    ${new Date(entry.logged_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
                   </td>
                   <td style="font-weight:500;color:var(--aubergine)">
                     ${staffProfiles.find(p => p.id === entry.user_id)?.full_name ?? '–'}

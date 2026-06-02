@@ -25,7 +25,7 @@ export async function login(email, password) {
   const { error: logError } = await supabase.from('login_history').insert({
     user_id:      data.user?.id,
     email,
-    logged_in_at: new Date().toISOString(),
+    logged_at:    new Date().toISOString(),
     device_info:  parseUserAgent(navigator.userAgent),
   })
   if (logError) {
