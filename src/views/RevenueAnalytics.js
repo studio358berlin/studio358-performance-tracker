@@ -751,10 +751,16 @@ export function RevenueAnalytics({ user }) {
               <input id="bf-custom-name" type="text" maxlength="100" placeholder="z.B. Gel-Nails komplett" style="${mStyle}">
             </label>
           </div>
-          <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
-            Preis in EUR
-            <input id="bf-price" type="number" min="0" step="0.01" value="" placeholder="0.00" style="${mStyle}">
-          </label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+              Preis in EUR
+              <input id="bf-price" type="number" min="0" step="0.01" value="" placeholder="0.00" style="${mStyle}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;font-size:0.875rem;font-weight:500;color:var(--aubergine)">
+              Trinkgeld in EUR
+              <input id="bf-tip" type="number" min="0" step="0.01" value="0" style="${mStyle}">
+            </label>
+          </div>
           <div id="bf-msg" style="display:none;font-size:0.875rem;padding:10px 14px;border-radius:var(--radius-sm)"></div>
         </div>
         <div style="padding:0 24px 24px;display:flex;gap:10px">
@@ -811,6 +817,7 @@ export function RevenueAnalytics({ user }) {
       const locId        = locSel.value
       const treatId      = treatSel.value
       const price        = priceInp.value
+      const tipVal       = overlay.querySelector('#bf-tip').value
       const isCustom     = treatId === CUSTOM_VAL
       const freitextName = customName.value.trim()
 
@@ -834,7 +841,7 @@ export function RevenueAnalytics({ user }) {
         is_cancelled:   false,
         is_no_show:     false,
         payment_method: 'bar',
-        tip:            0,
+        tip:            Math.max(0, Number(tipVal) || 0),
       })
 
       if (error) {
