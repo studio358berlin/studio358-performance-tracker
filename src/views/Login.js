@@ -39,7 +39,7 @@ export function Login({ onSuccess }) {
               required
               autocomplete="current-password"
             />
-            <div style="text-align:right;margin-top:6px">
+            <div style="text-align:center;margin-top:8px">
               <button type="button" id="forgot-btn" style="background:none;border:none;padding:0;font-size:0.8rem;color:var(--aubergine);cursor:pointer;text-decoration:underline">
                 [ Passwort vergessen? ]
               </button>

@@ -489,6 +489,12 @@ export function StudioAdmin({ user }) {
                         data-id="${p.id}"
                         style="font-size:0.78rem;padding:5px 12px"
                       >[ Bearbeiten ]</button>
+                      <button
+                        class="staff-delete-btn btn btn-sm"
+                        data-id="${p.id}"
+                        data-name="${(p.full_name ?? '').replace(/"/g, '&quot;')}"
+                        style="font-size:0.78rem;padding:5px 12px;background:none;border:1px solid var(--cream-dark);color:var(--text-mid);border-radius:var(--radius-sm);cursor:pointer;transition:color 0.15s,border-color 0.15s"
+                      >[ loeschen ]</button>
                     </div>
                   </td>
                 </tr>
@@ -1047,6 +1053,28 @@ export function StudioAdmin({ user }) {
     // Staff: edit profile (name + email)
     container.querySelectorAll('.staff-edit-btn[data-id]').forEach(btn => {
       btn.addEventListener('click', () => openEditProfileModal(btn.dataset.id))
+    })
+
+    // Staff: delete user completely
+    container.querySelectorAll('.staff-delete-btn[data-id]').forEach(btn => {
+      btn.addEventListener('mouseenter', () => { btn.style.color = 'var(--terracotta)'; btn.style.borderColor = 'var(--terracotta)' })
+      btn.addEventListener('mouseleave', () => { btn.style.color = 'var(--text-mid)';   btn.style.borderColor = 'var(--cream-dark)' })
+      btn.addEventListener('click', async () => {
+        const name = btn.dataset.name || 'diesen Mitarbeiter'
+        if (!confirm(`Mitarbeiter "${name}" wirklich komplett loeschen?\n\nDieser Vorgang entfernt den Account dauerhaft und kann nicht rueckgaengig gemacht werden.`)) return
+        btn.disabled    = true
+        btn.textContent = '[ wird geloescht... ]'
+        const { error } = await supabase.rpc('delete_user_completely', { target_user_id: btn.dataset.id })
+        if (error) {
+          showToast('Fehler beim Loeschen: ' + error.message, 'error')
+          btn.disabled    = false
+          btn.textContent = '[ loeschen ]'
+          return
+        }
+        staffProfiles = staffProfiles.filter(p => p.id !== btn.dataset.id)
+        showToast('Mitarbeiter wurde geloescht.', 'success')
+        rerender()
+      })
     })
 
     // Staff: sub-tab navigation

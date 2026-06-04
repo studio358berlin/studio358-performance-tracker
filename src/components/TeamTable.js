@@ -17,7 +17,6 @@ function getMonthStatus(employeeId, evals) {
     e.employee_id === employeeId &&
     (e.evaluation_month ?? e.created_at ?? '').slice(0, 7) === ym
   )
-  // Employee must have explicitly submitted (is_self_assessment === true)
   if (!entry || entry.is_self_assessment !== true) return 'missing'
   const hasMgr = entry.manager_scores && Object.keys(entry.manager_scores).length > 0
   if (!hasMgr) return 'waiting'
@@ -34,7 +33,7 @@ function statusCell(status) {
   `
 }
 
-export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, onDelete }) {
+export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail }) {
   function getEmployeeEvals(employeeId) {
     return evaluations.filter(e => e.employee_id === employeeId)
   }
@@ -129,7 +128,6 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, on
                       data-id="${emp.id}"
                       ${locked ? `disabled title="Mitarbeiter muss zuerst Selbstbewertung abgeben" style="opacity:0.4;cursor:not-allowed"` : ''}
                     >Bewerten</button>
-                    <button class="btn btn-sm btn-danger btn-delete" data-id="${emp.id}">[ LOESCHEN ]</button>
                   </div>
                 </td>
               </tr>
@@ -145,16 +143,6 @@ export function TeamTable({ employees, evaluations, onEvaluate, onViewDetail, on
 
     wrapper.querySelectorAll('.btn-detail').forEach(btn => {
       btn.addEventListener('click', () => onViewDetail(btn.dataset.id))
-    })
-
-    wrapper.querySelectorAll('.btn-delete').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const emp  = employees.find(e => e.id === btn.dataset.id)
-        const name = emp?.full_name ?? 'diesen Mitarbeiter'
-        if (confirm(`Mitarbeiter "${name}" wirklich löschen?\n\nDieser Vorgang kann nicht rückgängig gemacht werden.`)) {
-          onDelete(btn.dataset.id)
-        }
-      })
     })
 
     return wrapper

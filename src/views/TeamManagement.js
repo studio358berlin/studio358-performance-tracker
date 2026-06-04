@@ -1890,9 +1890,12 @@ export function TeamManagement({ user }) {
         if (e.target.querySelector('[name="studio_mitte"]')?.checked)   assignedStudios.push('Studio Mitte')
         formObj.assigned_studios = assignedStudios
         await addEmployee(formObj, selectedSkills)
-        showToast('Mitarbeiter angelegt!', 'success')
         showAddForm = false
         await loadData(); rerender()
+        // Hinweis: Supabase verlangt standardmaessig E-Mail-Bestaetigung.
+        // Falls der Login sofort funktionieren soll, muss "Confirm email" in
+        // den Supabase Auth-Settings deaktiviert werden.
+        alert('Mitarbeiter angelegt!\n\nBitte pruefe den Posteingang des Mitarbeiters zur Bestaetigung oder schalte die E-Mail-Bestaetigung in den Supabase Auth-Settings aus, damit der Login sofort funktioniert.')
       } catch (err) {
         errorEl.textContent = 'Fehler: ' + err.message
         errorEl.style.display = 'block'
@@ -2078,7 +2081,6 @@ export function TeamManagement({ user }) {
           selectedEmployee = employees.find(e => e.id === id) ?? null
           view = 'detail'; rerender()
         },
-        onDelete: handleDelete,
       })
       tableArea.appendChild(table.render())
     }
