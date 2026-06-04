@@ -10,7 +10,9 @@ export function RevenueAnalytics({ user }) {
   function isEmpVisible(prof) {
     if (!mgrStudios)        return true
     if (!mgrStudios.length) return true
-    return mgrStudios.some(s => (prof.assigned_studios ?? []).includes(s))
+    return mgrStudios.some(s =>
+      (prof.assigned_studios ?? []).some(es => es.toLowerCase() === s.toLowerCase())
+    )
   }
 
   let locations   = []
@@ -842,9 +844,11 @@ export function RevenueAnalytics({ user }) {
         is_no_show:     false,
         payment_method: 'bar',
         tip:            Math.max(0, Number(tipVal) || 0),
+        created_by:     user.id,
       })
 
       if (error) {
+        console.error('NACHBUCHUNGS-FEHLER:', error)
         showMsg('Fehler beim Speichern: ' + error.message)
         saveBtn.disabled    = false
         saveBtn.textContent = '[ Buchen ]'

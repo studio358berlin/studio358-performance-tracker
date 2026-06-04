@@ -15,7 +15,9 @@ export function TeamManagement({ user }) {
   function isEmpVisible(emp) {
     if (!mgrStudios)        return true
     if (!mgrStudios.length) return true
-    return mgrStudios.some(s => (emp.assigned_studios ?? []).includes(s))
+    return mgrStudios.some(s =>
+      (emp.assigned_studios ?? []).some(es => es.toLowerCase() === s.toLowerCase())
+    )
   }
 
   let employees      = []
@@ -196,6 +198,9 @@ export function TeamManagement({ user }) {
   async function addEmployee(formData, selectedSkills = []) {
     const tempPassword = formData.password || Math.random().toString(36).slice(-8)
 
+    // Aktuelle Manager-Session sichern, damit sie nach signUp wiederhergestellt werden kann
+    const { data: { session: managerSession } } = await supabase.auth.getSession()
+
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email:    formData.email,
       password: tempPassword,
@@ -208,7 +213,17 @@ export function TeamManagement({ user }) {
       throw authError
     }
 
-    const { error: profileError } = await supabase.from('profiles').insert({
+    // Manager-Session sofort wiederherstellen, damit signUp die aktive Session nicht ersetzt
+    if (managerSession?.access_token) {
+      await supabase.auth.setSession({
+        access_token:  managerSession.access_token,
+        refresh_token: managerSession.refresh_token,
+      })
+    }
+
+    // upsert statt insert: der DB-Trigger on_auth_user_created legt beim signUp bereits
+    // einen Minimal-Eintrag an – ein reines insert() wuerden wegen PK-Konflikt fehlschlagen
+    const { error: profileError } = await supabase.from('profiles').upsert({
       id:               authData.user.id,
       full_name:        formData.full_name,
       email:            formData.email,
@@ -216,9 +231,9 @@ export function TeamManagement({ user }) {
       assigned_studios: formData.assigned_studios ?? [],
       level:            formData.level || 'junior',
       skills:           selectedSkills,
-    })
+    }, { onConflict: 'id' })
     if (profileError) {
-      console.error('profiles INSERT fehlgeschlagen:', profileError)
+      console.error('profiles UPSERT fehlgeschlagen:', profileError)
       throw profileError
     }
 
