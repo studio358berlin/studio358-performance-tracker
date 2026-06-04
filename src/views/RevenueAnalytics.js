@@ -849,6 +849,7 @@ export function RevenueAnalytics({ user }) {
 
       if (error) {
         console.error('NACHBUCHUNGS-FEHLER:', error)
+        alert('DB-Fehler: ' + error.message)
         showMsg('Fehler beim Speichern: ' + error.message)
         saveBtn.disabled    = false
         saveBtn.textContent = '[ Buchen ]'

@@ -179,7 +179,7 @@ export function TeamManagement({ user }) {
   // ── Employee form ──────────────────────────────────────────────────────────
 
   async function deleteEmployee(employeeId) {
-    const { error } = await supabase.rpc('delete_employee', { employee_id: employeeId })
+    const { error } = await supabase.rpc('delete_user_completely', { target_user_id: employeeId })
     if (error) throw error
   }
 
