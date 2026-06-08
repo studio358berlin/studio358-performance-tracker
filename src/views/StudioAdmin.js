@@ -22,6 +22,7 @@ export function StudioAdmin({ user }) {
 
   let activeStaffSubTab = 'users'
   let loginHistory      = []
+  let punctualityMap    = {}
 
   // ── Guard ────────────────────────────────────────────────────────────────────
   if (!isManager) {
@@ -76,6 +77,29 @@ export function StudioAdmin({ user }) {
     ])
     reportLogs  = logsRes.data  ?? []
     reportHours = hoursRes.data ?? []
+  }
+
+  async function loadPunctualityStats() {
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const { data } = await supabase
+      .from('employee_daily_hours')
+      .select('employee_id, date, was_late, late_comment')
+      .gte('date', cutoffStr)
+    punctualityMap = {}
+    for (const h of (data ?? [])) {
+      if (!punctualityMap[h.employee_id]) {
+        punctualityMap[h.employee_id] = { totalDays: 0, lateDays: 0, lateEntries: [] }
+      }
+      punctualityMap[h.employee_id].totalDays++
+      if (h.was_late) {
+        punctualityMap[h.employee_id].lateDays++
+        if (h.late_comment) {
+          punctualityMap[h.employee_id].lateEntries.push({ date: h.date, comment: h.late_comment })
+        }
+      }
+    }
   }
 
   async function loadLoginHistory() {
@@ -451,11 +475,22 @@ export function StudioAdmin({ user }) {
                 <th>E-Mail</th>
                 <th>Aktuelle Rolle</th>
                 <th>Studios</th>
+                <th>Pünktlichkeit (30 Tage)</th>
                 <th style="text-align:center">Status / Aktionen</th>
               </tr>
             </thead>
             <tbody>
-              ${staffProfiles.map(p => `
+              ${staffProfiles.map(p => {
+                const ps = punctualityMap[p.id]
+                const punctCell = !ps
+                  ? `<span style="font-size:0.78rem;color:var(--text-light)">Keine Daten</span>`
+                  : `<div style="font-size:0.82rem;color:var(--text-mid);line-height:1.6">
+                       Pünktlichkeit (Eigenauskunft): <strong style="color:${ps.lateDays > 0 ? 'var(--terracotta)' : '#27AE60'}">${ps.lateDays} mal zu spät</strong> von ${ps.totalDays} Arbeitstagen
+                       ${ps.lateEntries.length > 0
+                         ? `<br><button class="btn-show-late-reasons" data-empid="${p.id}" style="background:none;border:none;font-size:0.78rem;color:var(--aubergine);text-decoration:underline;cursor:pointer;padding:2px 0">[ Gründe einsehen ]</button>`
+                         : ''}
+                     </div>`
+                return `
                 <tr>
                   <td style="font-weight:600;color:var(--aubergine)">${p.full_name ?? '–'}</td>
                   <td style="color:var(--text-mid);font-size:0.84rem">${p.email ?? '–'}</td>
@@ -476,6 +511,7 @@ export function StudioAdmin({ user }) {
                       `).join('')}
                     </div>
                   </td>
+                  <td>${punctCell}</td>
                   <td style="text-align:center">
                     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
                       <button
@@ -497,8 +533,8 @@ export function StudioAdmin({ user }) {
                       >[ loeschen ]</button>
                     </div>
                   </td>
-                </tr>
-              `).join('')}
+                </tr>`
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -900,6 +936,50 @@ export function StudioAdmin({ user }) {
     `
   }
 
+  // ── Verspätungsgründe-Popup ───────────────────────────────────────────────────
+
+  function showLateCommentsPopup(entries, anchorEl) {
+    document.querySelector('.late-comments-popup')?.remove()
+
+    const popup = document.createElement('div')
+    popup.className = 'late-comments-popup'
+    popup.style.cssText = 'position:fixed;z-index:9999;background:var(--white);border:1px solid var(--cream-dark);border-radius:var(--radius-md);padding:14px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.18);max-width:320px;max-height:300px;overflow-y:auto'
+
+    popup.innerHTML = `
+      <div style="font-size:0.72rem;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">
+        Hinterlegte Verspätungsgründe (letzte 30 Tage)
+      </div>
+      ${entries.map(e => `
+        <div style="padding:6px 0;border-bottom:1px solid var(--cream-dark);font-size:0.83rem;color:var(--text-mid)">
+          <strong style="color:var(--aubergine)">${new Date(e.date + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
+          &nbsp;&ndash;&nbsp;${(e.comment ?? '').replace(/</g, '&lt;')}
+        </div>
+      `).join('')}
+      <button id="late-popup-close" style="margin-top:10px;background:none;border:none;font-size:0.8rem;color:var(--text-light);cursor:pointer;padding:2px 0">
+        [ Schliessen ]
+      </button>
+    `
+
+    document.body.appendChild(popup)
+
+    const rect    = anchorEl.getBoundingClientRect()
+    const popupW  = 320
+    let   left    = Math.round(rect.left)
+    if (left + popupW > window.innerWidth - 16) left = window.innerWidth - popupW - 16
+    popup.style.top  = (rect.bottom + 6 + window.scrollY) + 'px'
+    popup.style.left = Math.max(16, left) + 'px'
+
+    popup.querySelector('#late-popup-close').addEventListener('click', () => popup.remove())
+
+    function outsideClick(e) {
+      if (!popup.contains(e.target) && e.target !== anchorEl) {
+        popup.remove()
+        document.removeEventListener('click', outsideClick)
+      }
+    }
+    setTimeout(() => document.addEventListener('click', outsideClick), 0)
+  }
+
   // ── Events ────────────────────────────────────────────────────────────────────
 
   function attachEvents() {
@@ -909,7 +989,7 @@ export function StudioAdmin({ user }) {
         if (tab === 'staff' && !isAdmin) return
         activeTab = tab; editingTreatment = undefined; editingLocation = undefined
         if (tab === 'reports') { container.innerHTML = buildHTML(); await loadReportData() }
-        else if (tab === 'staff') { activeStaffSubTab = 'users'; await loadStaffData() }
+        else if (tab === 'staff') { activeStaffSubTab = 'users'; await Promise.all([loadStaffData(), loadPunctualityStats()]) }
         rerender()
       })
     })
@@ -1074,6 +1154,15 @@ export function StudioAdmin({ user }) {
         staffProfiles = staffProfiles.filter(p => p.id !== btn.dataset.id)
         showToast('Mitarbeiter wurde geloescht.', 'success')
         rerender()
+      })
+    })
+
+    // Staff: Verspätungsgründe-Popup
+    container.querySelectorAll('.btn-show-late-reasons[data-empid]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const entries = punctualityMap[btn.dataset.empid]?.lateEntries ?? []
+        showLateCommentsPopup(entries, btn)
       })
     })
 

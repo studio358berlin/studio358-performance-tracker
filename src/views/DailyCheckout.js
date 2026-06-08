@@ -280,13 +280,15 @@ export function DailyCheckout({ user, onNavigate }) {
     rerender()
   }
 
-  // saveHours: speichert Gesamtstunden (Dezimalzahl) + Pause + Standort
+  // saveHours: speichert Gesamtstunden (Dezimalzahl) + Pause + Standort + Pünktlichkeits-Eigenauskunft
   async function saveHours({
     totalHours     = 8,
     lunchBreakMins = 0,
     locationId     = null,
     locationName   = null,
     isManualEdit   = false,
+    wasLate        = null,
+    lateComment    = null,
   } = {}) {
     const today = localDate()
     const h     = Math.max(0, totalHours)
@@ -307,6 +309,11 @@ export function DailyCheckout({ user, onNavigate }) {
       if (!hoursToday.is_modified) {
         payload.original_hours = buildHoursDisplayLine(hoursToday)
       }
+    }
+
+    if (wasLate !== null) {
+      payload.was_late     = wasLate
+      payload.late_comment = lateComment ?? null
     }
 
     let data, error
@@ -333,7 +340,7 @@ export function DailyCheckout({ user, onNavigate }) {
 
   // ── Arbeitszeit-Erfassungs-Formular ───────────────────────────────────────────
 
-  function openHoursFormModal() {
+  function openHoursFormModal(punctualityData = null) {
     const overlay = document.createElement('div')
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
 
@@ -517,6 +524,8 @@ export function DailyCheckout({ user, onNavigate }) {
         locationId:     selLocId,
         locationName:   selLocName,
         isManualEdit:   isEdit,
+        wasLate:        punctualityData?.wasLate    ?? null,
+        lateComment:    punctualityData?.lateComment ?? null,
       })
       if (ok) overlay.remove()
       else {
@@ -568,6 +577,61 @@ export function DailyCheckout({ user, onNavigate }) {
       overlay.remove()
       if (rest.length > 0) showMandatorySopModal(rest, onAllRead)
       else onAllRead()
+    })
+  }
+
+  // ── Pünktlichkeits-Eigenauskunft Modal ───────────────────────────────────────
+
+  function openPunctualityModal(onProceed) {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:16px;box-sizing:border-box'
+
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:var(--radius-lg);max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:22px 20px 0">
+          <p style="margin:0;font-size:0.97rem;font-weight:600;color:var(--aubergine);line-height:1.5;flex:1">
+            Kurze Rückmeldung zum Schichtstart: Warst du heute pünktlich im Laden?
+          </p>
+          <button id="punct-close" style="background:none;border:none;font-size:0.85rem;cursor:pointer;color:var(--text-light);padding:0 0 0 12px;font-weight:700;flex-shrink:0">X</button>
+        </div>
+        <div style="padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+          <button id="punct-yes" class="btn btn-accent" style="width:100%;justify-content:center">
+            [ Ja, ich war pünktlich ]
+          </button>
+          <button id="punct-no" class="btn btn-ghost" style="width:100%;justify-content:center">
+            [ Nein, ich war verspätet ]
+          </button>
+        </div>
+        <div id="punct-late-section" style="display:none;padding:0 20px 20px;flex-direction:column;gap:10px">
+          <textarea id="punct-comment" placeholder="Grund / Minuten (optional)"
+            style="padding:10px;border:1px solid var(--cream-dark);border-radius:var(--radius-sm);font-size:0.9rem;resize:vertical;min-height:80px;font-family:inherit;color:var(--aubergine);width:100%;box-sizing:border-box"></textarea>
+          <button id="punct-start" class="btn btn-accent" style="width:100%;justify-content:center">
+            [ Schicht jetzt starten ]
+          </button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    const lateSection = overlay.querySelector('#punct-late-section')
+
+    overlay.querySelector('#punct-close').addEventListener('click', () => overlay.remove())
+
+    overlay.querySelector('#punct-yes').addEventListener('click', () => {
+      overlay.remove()
+      onProceed({ wasLate: false, lateComment: null })
+    })
+
+    overlay.querySelector('#punct-no').addEventListener('click', () => {
+      overlay.querySelector('#punct-no').style.display = 'none'
+      lateSection.style.display = 'flex'
+    })
+
+    overlay.querySelector('#punct-start').addEventListener('click', () => {
+      const comment = overlay.querySelector('#punct-comment').value.trim() || null
+      overlay.remove()
+      onProceed({ wasLate: true, lateComment: comment })
     })
   }
 
@@ -1377,16 +1441,16 @@ export function DailyCheckout({ user, onNavigate }) {
 
     container.querySelector('#goto-admin')?.addEventListener('click', () => onNavigate?.('admin'))
 
-    // Arbeitszeit-Formular – Banner (Ersterfassung) mit SOP-Gate
+    // Arbeitszeit-Formular – Banner (Ersterfassung) mit SOP-Gate und Pünktlichkeits-Eigenauskunft
     container.querySelector('#btn-hours-banner')?.addEventListener('click', async () => {
       try {
         const { data: unread } = await supabase.rpc('get_unread_mandatory_articles', { target_employee_id: user.id })
         if (unread && unread.length > 0) {
-          showMandatorySopModal(unread, () => openHoursFormModal())
+          showMandatorySopModal(unread, () => openPunctualityModal(pd => openHoursFormModal(pd)))
           return
         }
       } catch (_) { /* RPC noch nicht verfügbar */ }
-      openHoursFormModal()
+      openPunctualityModal(pd => openHoursFormModal(pd))
     })
 
     // Bearbeiten-Button im Heute-erfasst-Widget
